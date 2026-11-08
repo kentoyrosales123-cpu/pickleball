@@ -14,9 +14,9 @@ await migrateRatings();
 await migrateStarRanking();
 const server = http.createServer(createApp(config));
 const io = new Server(server, {
-  cors: { origin: config.APP_URL, credentials: true },
+  cors: { origin: config.ALLOWED_ORIGINS, credentials: true },
   allowRequest: (req, done) =>
-    done(null, req.headers.origin === config.APP_URL),
+    done(null, config.ALLOWED_ORIGINS.includes(req.headers.origin)),
 });
 io.use(async (socket, next) => {
   try {

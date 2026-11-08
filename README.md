@@ -166,3 +166,11 @@ Start with **one web-service instance**. Rate limits are currently per process a
 No GitHub push or public deployment is performed automatically. The repository contains working application source and deployment configuration; production account configuration, SMTP verification, browser visual review, and operational acceptance are still required before calling a live deployment production-ready.
 
 Implementation references: [Mongoose transactions](https://mongoosejs.com/docs/transactions.html) and [Express production security](https://expressjs.com/advanced/best-practice-security/).
+
+### Render origin and proxy configuration
+
+The app detects Render through `RENDER=true` and trusts one proxy hop even if `NODE_ENV` was accidentally set to development. Keep `NODE_ENV=production` for secure cookies and production validation; SMTP configuration is still required in production.
+
+`APP_URL` is normalized to its origin, so a trailing slash or pasted login path does not break login. On Render, a missing or localhost `APP_URL` falls back to `RENDER_EXTERNAL_URL`. The configured origin and the service's Render origin are allowed consistently for API requests and Socket.IO. Other origins remain blocked. Set `APP_URL` to your canonical HTTPS domain for email links.
+
+The repository selects Node 24. An explicit Render `NODE_VERSION` takes precedence, so remove an override or set it to `24`. Atlas network access must still allow the service's outbound IP ranges; application changes cannot modify Atlas access rules.

@@ -12,7 +12,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export function createApp(config) {
   const app = express();
   app.disable("x-powered-by");
-  if (config.NODE_ENV === "production") app.set("trust proxy", 1);
+  app.set(
+    "trust proxy",
+    config.TRUST_PROXY ?? (config.NODE_ENV === "production" ? 1 : false),
+  );
+  const allowedOrigins = config.ALLOWED_ORIGINS ?? [
+    new URL(config.APP_URL).origin,
+  ];
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -27,7 +33,7 @@ export function createApp(config) {
       },
     }),
   );
-  app.use(cors({ origin: config.APP_URL, credentials: true }));
+  app.use(cors({ origin: allowedOrigins, credentials: true }));
   app.use(express.json({ limit: "100kb" }), cookieParser());
   app.use(
     "/api",
@@ -43,7 +49,7 @@ export function createApp(config) {
     if (
       !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
       (req.get("X-PMS-Request") !== "1" ||
-        (req.get("Origin") && req.get("Origin") !== config.APP_URL))
+        (req.get("Origin") && !allowedOrigins.includes(req.get("Origin"))))
     )
       return res.status(403).json({ message: "Request origin rejected" });
     next();
