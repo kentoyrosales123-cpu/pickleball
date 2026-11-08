@@ -1,0 +1,44 @@
+{
+  "name": "pickleball-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test --test-concurrency=1",
+    "seed": "node scripts/seed.js",
+    "create-admin": "node scripts/create-admin.js",
+    "preview": "node scripts/preview.js",
+    "migrate": "node scripts/migrate.js",
+    "format": "prettier --write src scripts public test docs README.md package.json render.yaml .github",
+    "format:check": "prettier --check src scripts public test docs README.md package.json render.yaml .github"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bootstrap": "^5.3.8",
+    "chart.js": "^4.5.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "lucide": "^0.468.0",
+    "mongoose": "^9.0.0",
+    "nodemailer": "^10.3.1",
+    "socket.io": "^4.8.1",
+    "sweetalert2": "^11.26.3",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "mongodb-memory-server": "^10.3.0",
+    "prettier": "^3.9.10",
+    "supertest": "^7.1.4"
+  }
+}

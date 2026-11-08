@@ -1,0 +1,744 @@
+import test, { before, after } from "node:test";
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import request from "supertest";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
+import { createApp } from "../src/app.js";
+import {
+  connectDatabase,
+  User,
+  Event,
+  EventRegistration,
+  Team,
+  Match,
+  Tournament,
+  ActionToken,
+} from "../src/models/index.js";
+import { digest } from "../src/services/mail.js";
+import { JSDOM } from "jsdom";
+let repl, app, admin, players, adminCookie, playerCookie;
+const config = {
+  NODE_ENV: "test",
+  APP_URL: "http://localhost:3000",
+  JWT_SECRET: "test-only-secret-".repeat(5),
+};
+const cookie = (u) =>
+  `pms_session=${jwt.sign({ version: 0 }, config.JWT_SECRET, { subject: String(u._id), expiresIn: "1h", issuer: "pms", audience: "pms-web" })}`;
+const call = (method, url, body, auth = adminCookie) => {
+  const r = request(app)
+    [method](`/api${url}`)
+    .set("Cookie", auth || "")
+    .set("X-PMS-Request", "1");
+  return body === undefined ? r : r.send(body);
+};
+before(async () => {
+  repl = await MongoMemoryReplSet.create({
+    replSet: { count: 1 },
+    binary: { version: "7.0.14", downloadDir: ".cache/mongodb-binaries" },
+  });
+  await connectDatabase(repl.getUri());
+  app = createApp(config);
+  const hash = await bcrypt.hash("Testing-player-password-938", 4);
+  admin = await User.create({
+    fullName: "Administrator",
+    username: "admin",
+    email: "admin@example.test",
+    passwordHash: hash,
+    role: "admin",
+    provisionalRanking: 1,
+  });
+  players = await User.insertMany(
+    Array.from({ length: 24 }, (_, i) => ({
+      fullName: `Player ${i + 1}`,
+      username: `player${i + 1}`,
+      email: `player${i + 1}@example.test`,
+      passwordHash: hash,
+      provisionalRanking: (i % 12) + 1,
+    })),
+  );
+  adminCookie = cookie(admin);
+  playerCookie = cookie(players[0]);
+});
+after(async () => {
+  await mongoose.disconnect();
+  await repl?.stop();
+});
+async function createEvent(overrides = {}) {
+  const start = new Date(Date.now() + 4 * 86400_000);
+  const data = {
+    eventName: "Integration Rally",
+    eventType: "open-play",
+    location: "Court Center",
+    startDateTime: start.toISOString(),
+    endDateTime: new Date(+start + 7 * 86400_000).toISOString(),
+    registrationOpen: new Date(Date.now() - 86400_000).toISOString(),
+    registrationDeadline: new Date(+start - 86400_000).toISOString(),
+    capacity: 24,
+    minRanking: 1,
+    maxRanking: 12,
+    courts: ["1", "2", "3"],
+    format: "round-robin",
+    targetPoints: 11,
+    winningMargin: 2,
+    bestOf: 1,
+    rounds: 3,
+    matchDuration: 20,
+    status: "registration-open",
+    waitlistEnabled: true,
+    ...overrides,
+  };
+  const res = await call("post", "/events", data);
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  return res.body.event;
+}
+async function prepare(event, count = 8) {
+  for (const p of players.slice(0, count))
+    assert.equal(
+      (
+        await call("post", `/events/${event._id}/participants`, {
+          userId: String(p._id),
+        })
+      ).status,
+      200,
+    );
+  assert.equal(
+    (
+      await call("post", `/events/${event._id}/generate-teams`, {
+        mode: "balanced",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call("post", `/events/${event._id}/finalize-teams`, {
+        allowSubstitutes: false,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await call("post", `/events/${event._id}/generate-matches`, {})).status,
+    200,
+  );
+}
+test("authentication, ownership, CSRF, role checks and single-use reset tokens", async () => {
+  assert.equal((await call("get", "/auth/me", undefined, "")).status, 401);
+  assert.equal(
+    (await call("get", "/admin/players", undefined, playerCookie)).status,
+    403,
+  );
+  assert.equal(
+    (await request(app).post("/api/auth/login").send({})).status,
+    403,
+  );
+  const login = await call(
+    "post",
+    "/auth/login",
+    { email: players[0].email, password: "Testing-player-password-938" },
+    "",
+  );
+  assert.equal(login.status, 200);
+  assert.ok(login.headers["set-cookie"][0].includes("HttpOnly"));
+  assert.equal(login.body.user.passwordHash, undefined);
+  const registered = await call(
+    "post",
+    "/auth/register",
+    {
+      fullName: "New Member",
+      username: "newmember",
+      email: "new@example.test",
+      phone: "09123456789",
+      password: "Strong-new-password-1",
+      confirmPassword: "Strong-new-password-1",
+      provisionalRanking: 3,
+      role: "admin",
+    },
+    "",
+  );
+  assert.equal(registered.status, 201);
+  assert.equal(registered.body.user.role, "player");
+  assert.equal(
+    (
+      await call(
+        "put",
+        "/players/me",
+        { fullName: "Updated Player", officialRanking: 12, role: "admin" },
+        playerCookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await User.findById(players[0]._id)).officialRanking,
+    undefined,
+  );
+  const raw = "a".repeat(64);
+  await ActionToken.create({
+    userId: players[23]._id,
+    hash: digest(raw),
+    purpose: "reset",
+    expiresAt: new Date(Date.now() + 60000),
+  });
+  const reset = {
+    purpose: "reset",
+    token: raw,
+    password: "Reset-new-password-123",
+  };
+  assert.equal((await call("post", "/auth/action", reset, "")).status, 200);
+  assert.equal((await call("post", "/auth/action", reset, "")).status, 400);
+  assert.equal(
+    (await call("get", "/auth/me", undefined, cookie(players[23]))).status,
+    401,
+  );
+});
+test("concurrent registration never exceeds capacity; duplicates and waitlist promotion are consistent", async () => {
+  const event = await createEvent({ capacity: 4 });
+  const results = await Promise.all(
+    players
+      .slice(0, 12)
+      .map((p) => call("post", `/events/${event._id}/register`, {}, cookie(p))),
+  );
+  assert.ok(
+    results.every((r) => r.status === 200),
+    JSON.stringify(results.map((r) => r.body)),
+  );
+  assert.equal(
+    await EventRegistration.countDocuments({
+      eventId: event._id,
+      registrationStatus: "confirmed",
+    }),
+    4,
+  );
+  assert.equal((await Event.findById(event._id)).confirmedCount, 4);
+  const confirmed = await EventRegistration.findOne({
+    eventId: event._id,
+    registrationStatus: "confirmed",
+  });
+  assert.equal(
+    (
+      await call(
+        "post",
+        `/events/${event._id}/register`,
+        {},
+        cookie(players.find((p) => String(p._id) === String(confirmed.userId))),
+      )
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await call(
+        "delete",
+        `/events/${event._id}/participants/${confirmed.userId}`,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    await EventRegistration.countDocuments({
+      eventId: event._id,
+      registrationStatus: "confirmed",
+    }),
+    4,
+  );
+});
+test("eligibility, deadline, full event, draft teams and roster locking", async () => {
+  const restricted = await createEvent({
+    minRanking: 10,
+    capacity: 4,
+    waitlistEnabled: false,
+  });
+  assert.equal(
+    (await call("post", `/events/${restricted._id}/register`, {}, playerCookie))
+      .status,
+    400,
+  );
+  const full = await createEvent({ capacity: 4, waitlistEnabled: false });
+  const result = await Promise.all(
+    players
+      .slice(0, 6)
+      .map((p) => call("post", `/events/${full._id}/register`, {}, cookie(p))),
+  );
+  assert.equal(result.filter((r) => r.status === 200).length, 4);
+  assert.equal(result.filter((r) => r.status === 409).length, 2);
+  const draft = await call("post", `/events/${full._id}/generate-teams`, {
+    mode: "balanced",
+  });
+  assert.equal(draft.status, 200);
+  assert.equal(
+    (await call("get", `/events/${full._id}/teams`, undefined, playerCookie))
+      .body.teams.length,
+    0,
+  );
+  assert.equal(
+    (await call("post", `/events/${full._id}/finalize-teams`, {})).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call(
+        "delete",
+        `/events/${full._id}/register`,
+        undefined,
+        playerCookie,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await call("post", `/events/${full._id}/generate-teams`, {
+        mode: "random",
+      })
+    ).status,
+    400,
+  );
+});
+test("result submissions are idempotent and corrections replace statistics for both partners", async () => {
+  const event = await createEvent();
+  await prepare(event, 4);
+  const match = await Match.findOne({ eventId: event._id });
+  const payload = { scores: [{ a: 11, b: 5 }], revision: 0 };
+  assert.equal(
+    (await call("post", `/matches/${match._id}/results`, payload, playerCookie))
+      .status,
+    403,
+  );
+  const submissions = await Promise.all([
+    call("post", `/matches/${match._id}/results`, payload),
+    call("post", `/matches/${match._id}/results`, payload),
+  ]);
+  assert.ok(submissions.every((r) => r.status === 200));
+  const a = await Team.findById(match.teamA);
+  for (const id of a.players) {
+    const stats = (
+      await call(
+        "get",
+        "/players/me/stats",
+        undefined,
+        cookie(players.find((p) => String(p._id) === String(id))),
+      )
+    ).body;
+    assert.equal(stats.wins, 1);
+    assert.equal(stats.matches, 1);
+  }
+  assert.equal(
+    (
+      await call("put", `/matches/${match._id}/results`, {
+        scores: [{ a: 5, b: 11 }],
+        revision: 0,
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await call("put", `/matches/${match._id}/results`, {
+        scores: [{ a: 5, b: 11 }],
+        revision: 1,
+      })
+    ).status,
+    200,
+  );
+  for (const id of a.players) {
+    const stats = (
+      await call(
+        "get",
+        "/players/me/stats",
+        undefined,
+        cookie(players.find((p) => String(p._id) === String(id))),
+      )
+    ).body;
+    assert.equal(stats.wins, 0);
+    assert.equal(stats.losses, 1);
+  }
+});
+for (const format of [
+  "single-elimination",
+  "double-elimination",
+  "round-robin",
+  "group-knockout",
+])
+  test(`${format} advances to a champion with non-power-of-two teams`, async () => {
+    const event = await createEvent({ eventType: "tournament", format });
+    await prepare(event, 10);
+    let played = 0;
+    for (let loop = 0; loop < 60; loop++) {
+      const match = await Match.findOne({
+        eventId: event._id,
+        matchStatus: "scheduled",
+      }).sort({ roundNumber: 1 });
+      if (!match) break;
+      // Lower bracket champion wins the first final, exercising reset behavior.
+      const res = await call("post", `/matches/${match._id}/results`, {
+        scores: [match.bracketKey === "GF" ? { a: 5, b: 11 } : { a: 11, b: 5 }],
+        revision: match.revision,
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      played++;
+    }
+    const tournament = await Tournament.findOne({ eventId: event._id });
+    assert.ok(
+      tournament.champion,
+      `${format} lacks champion after ${played} matches`,
+    );
+    assert.equal(
+      await Match.countDocuments({
+        eventId: event._id,
+        matchStatus: { $in: ["pending", "scheduled"] },
+      }),
+      0,
+    );
+    if (format === "double-elimination")
+      assert.equal(
+        await Match.countDocuments({
+          eventId: event._id,
+          bracketKey: "RESET",
+          matchStatus: "finalized",
+        }),
+        1,
+      );
+  });
+test("notifications are private, profile fields are bounded, and admin actions are audited", async () => {
+  const own = await call("get", "/notifications", undefined, playerCookie);
+  assert.ok(
+    own.body.notifications.every((n) => n.userId === String(players[0]._id)),
+  );
+  assert.equal(
+    (
+      await call("put", `/admin/players/${players[0]._id}/ranking`, {
+        ranking: 8,
+        reason: "Observed assessment",
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await User.findById(players[0]._id)).officialRanking, 8);
+  assert.ok(
+    (await call("get", "/admin/audit-logs")).body.logs.some(
+      (l) => l.action === "confirm-ranking",
+    ),
+  );
+});
+
+test("reopening assignments requires confirmation and is blocked after official results", async () => {
+  const event = await createEvent();
+  await prepare(event, 4);
+  assert.equal(
+    (await call("post", `/events/${event._id}/reopen-teams`, {})).status,
+    400,
+  );
+  assert.equal(
+    (await call("post", `/events/${event._id}/reopen-teams`, { confirm: true }))
+      .status,
+    200,
+  );
+  assert.equal(await Match.countDocuments({ eventId: event._id }), 0);
+  assert.equal((await Event.findById(event._id)).finalizedBatch, undefined);
+  await call("post", `/events/${event._id}/finalize-teams`, {});
+  await call("post", `/events/${event._id}/generate-matches`, {});
+  const match = await Match.findOne({ eventId: event._id });
+  await call("post", `/matches/${match._id}/results`, {
+    scores: [{ a: 11, b: 0 }],
+    revision: 0,
+  });
+  assert.equal(
+    (await call("post", `/events/${event._id}/reopen-teams`, { confirm: true }))
+      .status,
+    400,
+  );
+});
+test("cascade result correction clears downstream scores and champion atomically", async () => {
+  const event = await createEvent({
+    eventType: "tournament",
+    format: "single-elimination",
+  });
+  await prepare(event, 8);
+  const first = await Match.find({ eventId: event._id, roundNumber: 1 });
+  for (const m of first)
+    await call("post", `/matches/${m._id}/results`, {
+      scores: [{ a: 11, b: 4 }],
+      revision: 0,
+    });
+  const final = await Match.findOne({ eventId: event._id, roundNumber: 2 });
+  assert.equal(
+    (
+      await call("post", `/matches/${final._id}/results`, {
+        scores: [{ a: 11, b: 4 }],
+        revision: 0,
+      })
+    ).status,
+    200,
+  );
+  const correction = { scores: [{ a: 4, b: 11 }], revision: 1 };
+  assert.equal(
+    (await call("put", `/matches/${first[0]._id}/results`, correction)).status,
+    400,
+  );
+  assert.equal(
+    (
+      await call("put", `/matches/${first[0]._id}/results`, {
+        ...correction,
+        cascadeCorrection: true,
+      })
+    ).status,
+    200,
+  );
+  const updated = await Match.findById(final._id);
+  assert.equal(updated.matchStatus, "scheduled");
+  assert.equal(updated.scores.length, 0);
+  assert.equal(updated.completedAt, undefined);
+  assert.equal(
+    (await Tournament.findOne({ eventId: event._id })).champion,
+    undefined,
+  );
+  assert.equal(
+    await Match.countDocuments({
+      eventId: event._id,
+      matchStatus: "finalized",
+    }),
+    2,
+  );
+});
+test("player-selected partner proposals require administrator review and prevent duplicate assignments", async () => {
+  const event = await createEvent({
+    teamMode: "player-selected",
+    eventType: "tournament",
+    format: "single-elimination",
+  });
+  for (const p of players.slice(0, 4))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  const body = { partnerId: String(players[1]._id) };
+  assert.equal(
+    (
+      await call(
+        "post",
+        `/events/${event._id}/partner-requests`,
+        body,
+        playerCookie,
+      )
+    ).status,
+    200,
+  );
+  const proposal = (await call("get", `/events/${event._id}/partner-requests`))
+    .body.proposals[0];
+  assert.equal(
+    (
+      await call(
+        "put",
+        `/events/${event._id}/partner-requests/${proposal._id}`,
+        { approve: true },
+        playerCookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await call(
+        "put",
+        `/events/${event._id}/partner-requests/${proposal._id}`,
+        { approve: true },
+      )
+    ).status,
+    200,
+  );
+  const teams = await Team.find({ eventId: event._id });
+  assert.equal(teams.length, 1);
+  assert.equal(teams[0].players.length, 2);
+});
+test("event interface drives real registration, draft, publication and schedule APIs", async () => {
+  const event = await createEvent();
+  for (const p of players.slice(0, 8))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  const dom = new JSDOM('<main id="content"></main>', {
+    url: "http://localhost:3000/",
+  });
+  const original = {
+    document: globalThis.document,
+    window: globalThis.window,
+    fetch: globalThis.fetch,
+    Swal: globalThis.Swal,
+    lucide: globalThis.lucide,
+  };
+  globalThis.document = dom.window.document;
+  globalThis.window = dom.window;
+  globalThis.lucide = { createIcons() {} };
+  globalThis.Swal = { fire: async () => ({ isConfirmed: true }) };
+  globalThis.fetch = async (url, options = {}) => {
+    const res = await call(
+      (options.method || "GET").toLowerCase(),
+      url.replace(/^\/api/, ""),
+      options.body ? JSON.parse(options.body) : undefined,
+    );
+    return {
+      ok: res.status < 400,
+      status: res.status,
+      json: async () => res.body,
+    };
+  };
+  const waitFor = async (selector) => {
+    for (let i = 0; i < 100; i++) {
+      const element = document.querySelector(selector);
+      if (element) return element;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`UI did not render ${selector}`);
+  };
+  try {
+    const { eventDetail } = await import("../public/js/events.js");
+    const state = {
+      user: { id: String(admin._id), role: "admin", provisionalRanking: 1 },
+      rankings: Array.from({ length: 12 }, (_, i) => `Level ${i + 1}`),
+      render: async () => {},
+    };
+    await eventDetail(document.querySelector("#content"), state, event._id);
+    assert.ok(document.querySelector('[data-tab="teams"]'));
+    await document.querySelector('[data-tab="teams"]').onclick();
+    await document.querySelector("#generate-teams").onclick();
+    const finalize = await waitFor("#finalize-teams");
+    assert.equal(document.querySelectorAll(".team-player").length, 8);
+    await finalize.onclick();
+    await waitFor("#reopen-teams");
+    await document.querySelector('[data-tab="matches"]').onclick();
+    await document.querySelector("#generate-matches").onclick();
+    await waitFor(".match-card");
+    assert.equal(document.querySelectorAll(".match-card").length, 6);
+    assert.equal(await Match.countDocuments({ eventId: event._id }), 6);
+    assert.ok(!document.querySelector("#generate-matches"));
+  } finally {
+    Object.assign(globalThis, original);
+    dom.window.close();
+  }
+});
+
+test("rotating partners fairly rotate an odd roster without player or court overlap", async () => {
+  const event = await createEvent({ format: "rotating", rounds: 9 });
+  for (const p of players.slice(0, 9))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  await call("post", `/events/${event._id}/generate-teams`, {
+    mode: "balanced",
+  });
+  assert.equal(
+    (
+      await call("post", `/events/${event._id}/finalize-teams`, {
+        allowSubstitutes: true,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await call("post", `/events/${event._id}/generate-matches`, {})).status,
+    200,
+  );
+  const matches = await Match.find({ eventId: event._id }).populate(
+    "teamA teamB",
+  );
+  const counts = new Map(players.slice(0, 9).map((p) => [String(p._id), 0]));
+  for (const round of new Set(matches.map((m) => m.roundNumber))) {
+    const active = matches
+      .filter((m) => m.roundNumber === round)
+      .flatMap((m) => [...m.teamA.players, ...m.teamB.players].map(String));
+    assert.equal(active.length, 8);
+    assert.equal(new Set(active).size, 8);
+    active.forEach((id) => counts.set(id, counts.get(id) + 1));
+  }
+  assert.equal(Math.max(...counts.values()) - Math.min(...counts.values()), 0);
+});
+test("court changes enforce overlap, event window and administrator checks", async () => {
+  const event = await createEvent();
+  await prepare(event, 8);
+  const matches = await Match.find({ eventId: event._id }).sort({
+    startDateTime: 1,
+  });
+  const clash = {
+    courtNumber: matches[1].courtNumber,
+    startDateTime: matches[1].startDateTime.toISOString(),
+  };
+  assert.equal(
+    (await call("put", `/matches/${matches[0]._id}/schedule`, clash)).status,
+    409,
+  );
+  const valid = {
+    courtNumber: "2",
+    startDateTime: new Date(
+      +new Date(event.endDateTime) - 20 * 60_000,
+    ).toISOString(),
+  };
+  assert.equal(
+    (
+      await call(
+        "put",
+        `/matches/${matches[0]._id}/schedule`,
+        valid,
+        playerCookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await call("put", `/matches/${matches[0]._id}/schedule`, valid)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call("put", `/matches/${matches[0]._id}/schedule`, {
+        ...valid,
+        courtNumber: "nonexistent",
+      })
+    ).status,
+    400,
+  );
+});
+test("a reset-final result can be corrected without deleting its own match", async () => {
+  const event = await createEvent({
+    eventType: "tournament",
+    format: "double-elimination",
+  });
+  await prepare(event, 4);
+  for (let i = 0; i < 3; i++) {
+    const match = await Match.findOne({
+      eventId: event._id,
+      matchStatus: "scheduled",
+    }).sort({ roundNumber: 1 });
+    const scores =
+      match.bracketKey === "GF" ? [{ a: 4, b: 11 }] : [{ a: 11, b: 4 }];
+    assert.equal(
+      (
+        await call("post", `/matches/${match._id}/results`, {
+          scores,
+          revision: match.revision,
+        })
+      ).status,
+      200,
+    );
+  }
+  const reset = await Match.findOne({
+    eventId: event._id,
+    bracketKey: "RESET",
+  });
+  assert.ok(reset);
+  assert.equal(
+    (
+      await call("put", `/matches/${reset._id}/results`, {
+        scores: [{ a: 4, b: 11 }],
+        revision: 1,
+        cascadeCorrection: true,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    String((await Tournament.findOne({ eventId: event._id })).champion),
+    String(reset.teamB),
+  );
+});
