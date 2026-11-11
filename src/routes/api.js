@@ -227,6 +227,7 @@ export function api(config) {
   r.get("/admin/dashboard", admin, p.dashboard);
   r.get("/admin/reports", admin, p.dashboard);
   r.get("/admin/players", admin, p.players);
+  r.post("/admin/players", admin, validate(registrationSchema), a.createUser);
   r.put(
     "/admin/players/:id/ranking",
     admin,

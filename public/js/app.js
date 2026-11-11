@@ -418,6 +418,45 @@ async function playersPage(content) {
       "Manage club membership and confirm player skill levels.",
     ) +
     `<div class="filters"><input class="form-control" id="player-search" placeholder="Search players" aria-label="Search players"><select class="form-select" id="ranking-status" aria-label="Ranking status"><option value="">All rankings</option><option value="provisional">Provisional</option><option value="confirmed">Confirmed</option></select></div><div class="panel" id="players-table"></div>`;
+  const createPanel = document.createElement("details");
+  createPanel.className = "panel mb-4";
+  createPanel.innerHTML = `<summary class="fw-bold">Create user</summary><p class="subtle mt-3">Create a player account. Share the sign-in details securely with the player.</p><form><div class="form-grid">${field("Full name", "fullName", "", "text", 'required minlength="2" maxlength="100"')}${field("Username", "username", "", "text", 'required pattern="[a-zA-Z0-9_]{3,30}" autocomplete="off"')}${field("Email address", "email", "", "email", "required")}${field("Mobile number", "phone", "", "tel", 'required minlength="7" maxlength="30"')}<div><label for="provisionalRanking" class="form-label">Initial skill level</label><select name="provisionalRanking" id="provisionalRanking" class="form-select">${rankings.map((r, i) => `<option value="${i + 1}">${i + 1} - ${esc(r)}</option>`).join("")}</select></div>${field("Password", "password", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}</div><div role="alert"></div><div class="form-actions"><button class="btn btn-primary" type="submit">Create user</button><button class="btn btn-secondary" type="button">Cancel</button></div></form>`;
+  content.querySelector(".filters").before(createPanel);
+  const createForm = createPanel.querySelector("form");
+  const createError = createPanel.querySelector("[role=alert]");
+  createPanel.querySelector('[type="button"]').onclick = () => {
+    createForm.reset();
+    createError.textContent = "";
+    createPanel.open = false;
+  };
+  createForm.onsubmit = async (event) => {
+    event.preventDefault();
+    const submit = createForm.querySelector('[type="submit"]');
+    submit.disabled = true;
+    createError.textContent = "";
+    try {
+      const result = await api(
+        "/admin/players",
+        "POST",
+        Object.fromEntries(new FormData(createForm)),
+      );
+      createForm.reset();
+      createPanel.open = false;
+      players.unshift({ ...result.user, _id: result.user.id, active: true });
+      content.querySelector("#player-search").value = "";
+      content.querySelector("#ranking-status").value = "";
+      draw();
+      toast(
+        result.emailSent
+          ? "User created. Verification email sent."
+          : "User created. They can request email verification from their profile.",
+      );
+    } catch (error) {
+      createError.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
+  };
   const draw = () => {
     const q = document.querySelector("#player-search").value.toLowerCase(),
       status = document.querySelector("#ranking-status").value;

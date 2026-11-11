@@ -742,3 +742,67 @@ test("a reset-final result can be corrected without deleting its own match", asy
     String(reset.teamB),
   );
 });
+
+test("admins create player accounts without replacing their session", async () => {
+  const data = {
+    fullName: "Admin Created",
+    username: "admin_created",
+    email: "created@example.test",
+    phone: "+15551234567",
+    password: "Created-player-password-938",
+    confirmPassword: "Created-player-password-938",
+    provisionalRanking: 3,
+    role: "admin",
+  };
+  assert.equal((await call("post", "/admin/players", data, "")).status, 401);
+  assert.equal(
+    (await call("post", "/admin/players", data, playerCookie)).status,
+    403,
+  );
+  assert.equal(
+    (
+      await call("post", "/admin/players", {
+        ...data,
+        confirmPassword: "mismatch",
+      })
+    ).status,
+    400,
+  );
+  const result = await call("post", "/admin/players", data);
+  assert.equal(result.status, 201, JSON.stringify(result.body));
+  assert.equal(result.headers["set-cookie"], undefined);
+  assert.equal(result.body.user.role, "player");
+  assert.equal(result.body.user.passwordHash, undefined);
+  assert.equal((await call("get", "/auth/me")).body.user.id, String(admin._id));
+  const stored = await User.findById(result.body.user.id).select(
+    "+passwordHash",
+  );
+  assert.ok(await bcrypt.compare(data.password, stored.passwordHash));
+  const { PlayerRanking } = await import("../src/models/ranking.js");
+  assert.ok(await PlayerRanking.findOne({ userId: stored._id }));
+  const { AuditLog } = await import("../src/models/index.js");
+  const log = await AuditLog.findOne({
+    entityId: String(stored._id),
+    action: "create-user",
+  });
+  assert.ok(log);
+  assert.equal(String(log.actorId), String(admin._id));
+  assert.ok(!JSON.stringify(log).includes(data.password));
+  assert.equal((await call("post", "/admin/players", data)).status, 409);
+  assert.equal(
+    (
+      await call("post", "/admin/players", {
+        ...data,
+        email: "different@example.test",
+      })
+    ).status,
+    409,
+  );
+  const login = await call(
+    "post",
+    "/auth/login",
+    { email: data.email, password: data.password },
+    "",
+  );
+  assert.equal(login.status, 200);
+});

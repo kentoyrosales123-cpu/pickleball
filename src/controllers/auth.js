@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import { User, ActionToken } from "../models/index.js";
 import { ensure, publicUser } from "../middleware/security.js";
+import { audit } from "../services/notifications.js";
 import { sendAction, digest } from "../services/mail.js";
 export const password = z
   .string()
@@ -63,8 +64,9 @@ export function authController(config) {
     );
     res.cookie("pms_session", token, { ...cookie, maxAge: 8 * 3600_000 });
   }
-  return {
-    register: async (req, res) => {
+  const createAccount =
+    (adminCreated = false) =>
+    async (req, res) => {
       const { password, confirmPassword, ...data } = req.body;
       const passwordHash = await bcrypt.hash(password, 12);
       const user = await mongoose.connection.transaction(async (session) => {
@@ -72,17 +74,35 @@ export function authController(config) {
           session,
         });
         await PlayerRanking.create([{ userId: created._id }], { session });
+        if (adminCreated)
+          await audit(
+            req.user._id,
+            "create-user",
+            "User",
+            created._id,
+            null,
+            {
+              fullName: created.fullName,
+              username: created.username,
+              email: created.email,
+              role: created.role,
+            },
+            session,
+          );
         return created;
       });
-      sign(res, user);
-      let emailSent = true;
+      if (!adminCreated) sign(res, user);
+      let emailSent = Boolean(config.SMTP_HOST);
       try {
         await sendAction(user, "verify", config);
       } catch {
         emailSent = false;
       }
       res.status(201).json({ user: publicUser(user), emailSent });
-    },
+    };
+  return {
+    register: createAccount(),
+    createUser: createAccount(true),
     login: async (req, res) => {
       const user = await User.findOne({ email: req.body.email }).select(
         "+passwordHash +tokenVersion",
