@@ -155,12 +155,47 @@ export function rankingRoutes() {
     if (historyFilter)
       for (const h of await RankingHistory.find(historyFilter).lean()) {
         const key = String(h.playerId),
-          s = performance.get(key) || { stars: 0, wins: 0, matches: 0 };
+          s = performance.get(key) || {
+            stars: 0,
+            wins: 0,
+            matches: 0,
+            points: 0,
+          };
         s.stars += h.starsChanged;
+        s.points = (s.points || 0) + h.mmrChanged;
         s.wins += Number(h.won);
         s.matches++;
         performance.set(key, s);
       }
+    if (q.period === "event") {
+      // Win/loss records belong to every official game, even when rewards were disabled.
+      for (const stats of performance.values()) {
+        stats.wins = 0;
+        stats.matches = 0;
+      }
+      const results = await Match.find({
+        eventId: q.eventId,
+        matchStatus: "finalized",
+      })
+        .populate("teamA teamB")
+        .lean();
+      for (const match of results)
+        for (const team of [match.teamA, match.teamB]) {
+          if (!team) continue;
+          for (const playerId of team.players) {
+            const key = String(playerId),
+              stats = performance.get(key) || {
+                stars: 0,
+                points: 0,
+                wins: 0,
+                matches: 0,
+              };
+            stats.matches++;
+            stats.wins += Number(String(match.winner) === String(team._id));
+            performance.set(key, stats);
+          }
+        }
+    }
     let rows = profiles
       .filter((p) => p.userId?.active && p.userId.role === "player")
       .map((p) => {
@@ -188,6 +223,9 @@ export function rankingRoutes() {
           totalLosses: matches - wins,
           winPercentage: matches ? (100 * wins) / matches : 0,
           mmr: s.mmr,
+          ...(show && q.period === "event"
+            ? { eventRatingPoints: perf.points || 0 }
+            : {}),
         };
       })
       .filter(

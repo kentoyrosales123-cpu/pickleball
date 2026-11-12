@@ -16,7 +16,7 @@ export async function renderQueue(container, event, addPlayers) {
   const free = event.courts.filter(
     (c) => !data.live.some((m) => m.courtNumber === c),
   );
-  container.innerHTML = `<div class="queue-toolbar"><div><h2>Live queue</h2><p class="subtle">Random partners and opponents ? Fewest games first ? ${data.completed} completed</p></div><button class="btn btn-secondary" id="queue-refresh">Refresh</button></div>
+  container.innerHTML = `<div class="queue-toolbar"><div><h2>Live queue</h2><p class="subtle">Ranked games: stars and rating points update after scoring. Random partners and opponents ? Fewest games first ? ${data.completed} completed</p></div><button class="btn btn-secondary" id="queue-refresh">Refresh</button></div>
   <div class="queue-courts">${event.courts
     .map((c) => {
       const m = data.live.find((m) => m.courtNumber === c);

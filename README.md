@@ -192,3 +192,9 @@ Up Next matches persist across refreshes and can be released back to the queue. 
 Sign in as Super Admin and open **User management** to create an account with a chosen role or use **Change role** beside an existing user. Role changes invalidate that user's sessions. You cannot change your own role or deactivate yourself, and at least one active Super Admin is preserved.
 
 On server startup, migration `003-super-admin` promotes the oldest active legacy Admin if no active Super Admin exists. It runs once; newly created Admin accounts are never automatically promoted. The development bootstrap now creates a Super Admin. Restart the server after updating, then refresh or sign in again to see the new navigation. The migration can also be run with `npm.cmd run migrate` against your configured database.
+
+### Live queue ranking results
+
+Live queue matches now award stars and ranking points automatically, including games queued before this update when their result is saved. New event forms enable rankings by default. Event standings count wins/losses from all finalized games, while star and rating-point changes count ranked games. Administrators can see rating-point changes alongside event stars.
+
+For games already completed while unranked, open the event's **Rankings** tab and select **Apply rankings to all event games**. This includes all existing results, enables future ranking, and replays rankings chronologically without duplicating rewards. Score corrections replay the same history. Wins normally earn one star; losses normally deduct one, with a zero-star floor and the existing protection/bonus rules. Ranking points increase on wins and decrease on losses according to team strength.

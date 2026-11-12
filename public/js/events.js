@@ -63,7 +63,7 @@ export async function eventForm(content, state, id) {
         waitlistEnabled: true,
         grandFinalReset: true,
         groupCount: 2,
-        rated: false,
+        rated: true,
       };
   content.innerHTML = `<div class="page-heading"><div><a href="#/events" class="subtle">← All events</a><h1 class="mt-2">${id ? "Fine-tune the details." : "Bring your next event to life."}</h1><p>Set up the courts. We’ll help with the rest.</p></div></div><form class="panel" id="event-form"><h3 class="mb-4">The essentials</h3><div class="form-grid">${input("Event name", "eventName", event.eventName, "text", 'required maxlength="120"')}${select(
     "Event type",
@@ -648,10 +648,34 @@ export async function eventDetail(content, state, id) {
   }
   let rankingPage = 1;
   async function rankingsTab() {
+    Object.assign(event, (await api(`/events/${id}`)).event);
     const data = await api(
       `/ranking/leaderboard?period=event&eventId=${id}&page=${rankingPage}&limit=50`,
     );
-    container.innerHTML = `<section class="panel"><div class="panel-header"><h3>Event rankings</h3><span class="badge ${event.rated ? "green" : ""}">${event.rated ? "Ranked event" : "Unranked event"}</span></div><p>Standings use net stars earned in this event, then wins. Only finalized ranked matches count. Corrections update these standings automatically.</p>${admin ? `<p class="subtle">Enable rankings in <a href="#/events/${id}/edit">Edit event</a> before recording results. Individual matches can be marked ranked or unranked in Matches.</p>` : ""}<div class="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th>Current club rank</th><th>Event stars</th><th>Wins</th><th>Losses</th><th>Win rate</th></tr></thead><tbody>${data.rows.map((p) => `<tr><td>${p.position}</td><td>${esc(p.fullName)}</td><td>${esc(p.rankTier)} ${esc(p.rankDivision || "")}</td><td>${p.totalStars > 0 ? "+" : ""}${p.totalStars}</td><td>${p.totalWins}</td><td>${p.totalLosses}</td><td>${p.winPercentage.toFixed(1)}%</td></tr>`).join("") || '<tr><td colspan="7">No ranked player profiles yet. Standings appear after ranked results are finalized.</td></tr>'}</tbody></table></div><div class="form-actions"><button class="btn btn-secondary" id="event-rank-prev" ${rankingPage === 1 ? "disabled" : ""}>Previous</button><span>Page ${rankingPage}</span><button class="btn btn-secondary" id="event-rank-next" ${rankingPage * 50 >= data.total ? "disabled" : ""}>Next</button></div></section>`;
+    container.innerHTML = `<section class="panel"><div class="panel-header"><h3>Event rankings</h3><span class="badge ${event.rated ? "green" : ""}">${event.rated ? "Ranked event" : "Unranked event"}</span></div><p>Standings use net stars earned in this event, then wins. Wins and losses include every finalized game. Stars and rating points come from ranked games. Corrections update these standings automatically.</p>${admin ? `<p class="subtle">Live queue games award ranking stars and rating points automatically. Use the button below to include previously unranked results.</p>` : ""}<div class="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th>Current club rank</th><th>Event stars</th>${admin ? "<th>Rating points change</th>" : ""}<th>Wins</th><th>Losses</th><th>Win rate</th></tr></thead><tbody>${data.rows.map((p) => `<tr><td>${p.position}</td><td>${esc(p.fullName)}</td><td>${esc(p.rankTier)} ${esc(p.rankDivision || "")}</td><td>${p.totalStars > 0 ? "+" : ""}${p.totalStars}</td>${admin ? `<td>${(p.eventRatingPoints || 0) > 0 ? "+" : ""}${(p.eventRatingPoints || 0).toFixed(1)}</td>` : ""}<td>${p.totalWins}</td><td>${p.totalLosses}</td><td>${p.winPercentage.toFixed(1)}%</td></tr>`).join("") || `<tr><td colspan="${admin ? 8 : 7}">No player profiles yet. Standings appear after results are finalized.</td></tr>`}</tbody></table></div><div class="form-actions"><button class="btn btn-secondary" id="event-rank-prev" ${rankingPage === 1 ? "disabled" : ""}>Previous</button><span>Page ${rankingPage}</span><button class="btn btn-secondary" id="event-rank-next" ${rankingPage * 50 >= data.total ? "disabled" : ""}>Next</button></div></section>`;
+    if (admin && !["cancelled", "draft"].includes(event.status)) {
+      const button = document.createElement("button");
+      button.className = "btn btn-primary mt-3";
+      button.textContent = "Apply rankings to all event games";
+      container.querySelector("section").append(button);
+      button.onclick = async () => {
+        if (
+          !(await confirm(
+            "Apply rankings to all event games?",
+            "Completed results will update stars and rating points. Future games will also be ranked. Repeating this does not duplicate rewards.",
+          ))
+        )
+          return;
+        button.disabled = true;
+        try {
+          await api(`/events/${id}/enable-rankings`, "POST", {});
+          await rankingsTab();
+        } catch (error) {
+          toast(error.message);
+          button.disabled = false;
+        }
+      };
+    }
     for (const [selector, step] of [
       ["#event-rank-prev", -1],
       ["#event-rank-next", 1],

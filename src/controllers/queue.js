@@ -111,6 +111,8 @@ export const queueController = {
         "Four waiting players are required",
         409,
       );
+      event.rated = true;
+      await event.save({ session });
       const draft = generateTeams(data.waiting.slice(0, 4), "random");
       const roundNumber =
         (await Match.countDocuments({ eventId: event._id }).session(session)) +
@@ -134,7 +136,7 @@ export const queueController = {
             roundNumber,
             stage: "queue",
             matchStatus: "pending",
-            rated: event.rated,
+            rated: true,
           },
         ],
         { session },

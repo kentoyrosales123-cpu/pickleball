@@ -1350,3 +1350,113 @@ test("Super Admin user management displays roles and saves role changes through 
     dom.window.close();
   }
 });
+
+test("event standings count unranked wins and enabling rewards replays once with corrections", async () => {
+  const { RankingHistory, PlayerRanking } =
+    await import("../src/models/ranking.js");
+  const event = await createEvent({ rated: false });
+  await prepare(event, 4);
+  const match = await Match.findOne({ eventId: event._id });
+  const team = await Team.findById(match.teamA);
+  assert.equal(
+    (
+      await call("post", `/matches/${match._id}/results`, {
+        scores: [{ a: 11, b: 4 }],
+        revision: 0,
+      })
+    ).status,
+    200,
+  );
+  const url = `/ranking/leaderboard?period=event&eventId=${event._id}`;
+  let standings = (await call("get", url)).body.rows;
+  const winnerId = String(team.players[0]);
+  assert.equal(standings.find((p) => p.playerId === winnerId).totalWins, 1);
+  assert.equal(standings.find((p) => p.playerId === winnerId).totalStars, 0);
+  assert.equal(
+    (
+      await call(
+        "post",
+        `/events/${event._id}/enable-rankings`,
+        {},
+        playerCookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await call("post", `/events/${event._id}/enable-rankings`, {})).status,
+    200,
+  );
+  standings = (await call("get", url)).body.rows;
+  const win = standings.find((p) => p.playerId === winnerId);
+  assert.equal(win.totalWins, 1);
+  assert.ok(win.totalStars > 0);
+  assert.ok(win.eventRatingPoints > 0);
+  const loser = standings.find((p) => p.totalLosses === 1);
+  assert.ok(loser.eventRatingPoints < 0);
+  assert.equal(await RankingHistory.countDocuments({ eventId: event._id }), 4);
+  const state = (await PlayerRanking.findOne({ userId: winnerId })).state;
+  await call("post", `/events/${event._id}/enable-rankings`, {});
+  assert.deepEqual(
+    (await PlayerRanking.findOne({ userId: winnerId })).state,
+    state,
+  );
+  const current = await Match.findById(match._id);
+  assert.equal(
+    (
+      await call("post", `/matches/${match._id}/results`, {
+        scores: [{ a: 4, b: 11 }],
+        revision: current.revision,
+      })
+    ).status,
+    200,
+  );
+  standings = (await call("get", url)).body.rows;
+  const corrected = standings.find((p) => p.playerId === winnerId);
+  assert.equal(corrected.totalWins, 0);
+  assert.equal(corrected.totalLosses, 1);
+  assert.ok(corrected.eventRatingPoints < 0);
+});
+
+test("live queue results automatically award ranking stars and points in an initially unranked event", async () => {
+  const { RankingHistory } = await import("../src/models/ranking.js");
+  const event = await createEvent({ format: "random", rated: false });
+  for (const p of players.slice(4, 8))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  const base = `/events/${event._id}/queue`;
+  assert.equal((await call("post", `${base}/prepare`, {})).status, 200);
+  const m = (await call("get", base)).body.next[0];
+  assert.equal(m.rated, true);
+  assert.equal((await Event.findById(event._id)).rated, true);
+  await call("post", `${base}/${m._id}/start`, { court: "1" });
+  // Also cover games queued by the previous app version with ranking disabled.
+  await Match.updateOne({ _id: m._id }, { rated: false });
+  await Event.updateOne({ _id: event._id }, { rated: false });
+  assert.equal(
+    (
+      await call("post", `/matches/${m._id}/results`, {
+        scores: [{ a: 11, b: 5 }],
+        revision: 0,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(await RankingHistory.countDocuments({ eventId: event._id }), 4);
+  const standings = (
+    await call("get", `/ranking/leaderboard?period=event&eventId=${event._id}`)
+  ).body.rows;
+  assert.equal(
+    standings.filter(
+      (p) => p.totalWins === 1 && p.totalStars > 0 && p.eventRatingPoints > 0,
+    ).length,
+    2,
+  );
+  assert.equal(
+    standings.filter((p) => p.totalLosses === 1 && p.eventRatingPoints < 0)
+      .length,
+    2,
+  );
+  assert.equal((await call("get", base)).body.waiting.length, 4);
+});

@@ -692,7 +692,12 @@ export const eventController = {
       const sameScores =
         JSON.stringify(current.scores.map((g) => ({ a: g.a, b: g.b }))) ===
         JSON.stringify(req.body.scores);
-      const rated = req.body.rated ?? current.rated;
+      const rated =
+        req.body.rated ?? (current.stage === "queue" ? true : current.rated);
+      if (current.stage === "queue" && rated && !event.rated) {
+        event.rated = true;
+        await event.save({ session });
+      }
       if (req.rankingAction === "correct")
         ensure(
           current.matchStatus === "finalized",
@@ -802,6 +807,45 @@ export const eventController = {
     publish();
     await publishRankingResult(match._id);
     res.json({ match });
+  },
+  enableRankings: async (req, res) => {
+    await mongoose.connection.transaction(async (session) => {
+      const settings = await lockRatings(session);
+      const event = await lockEvent(req.params.id, session, true);
+      event.rated = true;
+      await event.save({ session });
+      const matches = await Match.find({
+        eventId: event._id,
+        matchStatus: { $in: ["pending", "scheduled", "finalized"] },
+      }).session(session);
+      for (const match of matches) {
+        const changed =
+          !match.rated ||
+          (match.matchStatus === "finalized" && !match.starPolicy);
+        match.rated = true;
+        if (match.matchStatus === "finalized") {
+          captureRatingPolicy(match, settings);
+          await captureStarPolicy(match, session);
+        }
+        if (changed) match.revision++;
+        await match.save({ session });
+      }
+      await rebuildRatings(session);
+      await rebuildStarRankings(session, { actorId: req.user._id });
+      await audit(
+        req.user._id,
+        "enable-event-rankings",
+        "Event",
+        event._id,
+        null,
+        { matches: matches.length },
+        session,
+      );
+    });
+    publish();
+    res.json({
+      message: "Rankings applied to existing results and future games",
+    });
   },
   setRated: async (req, res) => {
     await mongoose.connection.transaction(async (session) => {

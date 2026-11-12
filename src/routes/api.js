@@ -179,6 +179,7 @@ export function api(config) {
   );
   r.post("/events/:id/generate-matches", admin, e.generateMatches);
   r.get("/events/:id/matches", e.matches);
+  r.post("/events/:id/enable-rankings", admin, e.enableRankings);
   const result = validate(
     z.object({
       scores: z
