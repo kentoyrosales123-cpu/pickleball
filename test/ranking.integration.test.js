@@ -687,3 +687,43 @@ test("Pickle Que review form calculates win rate, previews rank and saves throug
     dom.window.close();
   }
 });
+
+for (const eventType of ["open-play", "tournament"]) {
+  test(`${eventType} event rankings isolate results and update after corrections`, async () => {
+    const f = await fixture();
+    await Event.updateOne({ _id: f.event._id }, { eventType });
+    const m = await match(f);
+    assert.equal((await finalize(m)).status, 200);
+    const other = await fixture();
+    const outside = await match(f);
+    await Match.updateOne({ _id: outside._id }, { eventId: other.event._id });
+    assert.equal((await finalize(outside)).status, 200);
+    const url = `/ranking/leaderboard?period=event&eventId=${f.event._id}`;
+    let result = await call("get", url, undefined, cookie(f.players[0]));
+    assert.equal(result.status, 200);
+    assert.equal(result.body.total, 4);
+    let row = result.body.rows.find(
+      (p) => p.playerId === String(f.players[0]._id),
+    );
+    assert.equal(row.rankedMatches, 1);
+    assert.equal(row.totalWins, 1);
+    assert.equal(row.totalLosses, 0);
+    assert.equal(row.totalStars, 1);
+    assert.equal(row.mmr, undefined);
+    const correction = await call("post", `/ranking/matches/${m._id}/correct`, {
+      scores: [{ a: 5, b: 11 }],
+      revision: 1,
+      reason: "Correct event result",
+    });
+    assert.equal(correction.status, 200, JSON.stringify(correction.body));
+    result = await call("get", url);
+    row = result.body.rows.find((p) => p.playerId === String(f.players[0]._id));
+    assert.equal(row.totalWins, 0);
+    assert.equal(row.totalLosses, 1);
+    assert.equal(row.rankedMatches, 1);
+    assert.equal(
+      (await call("get", "/ranking/leaderboard?period=event")).status,
+      400,
+    );
+  });
+}

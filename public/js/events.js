@@ -1,3 +1,4 @@
+import { renderQueue } from "./queue.js";
 import {
   api,
   esc,
@@ -51,8 +52,8 @@ export async function eventForm(content, state, id) {
         maxRanking: 12,
         courts: ["1", "2"],
         fee: 0,
-        format: "round-robin",
-        teamMode: "balanced",
+        format: "random",
+        teamMode: "random",
         targetPoints: 11,
         winningMargin: 2,
         bestOf: 1,
@@ -82,7 +83,7 @@ export async function eventForm(content, state, id) {
     "maxRanking",
     state.rankings.map((r, i) => [i + 1, `${i + 1} · ${r}`]),
     event.maxRanking,
-  )}</div><div class="divider"></div><h3 class="mb-4">Teams & scoring</h3><div class="form-grid">${select("Match / tournament format", "format", ["random", "balanced", "round-robin", "rotating", "single-elimination", "double-elimination", "group-knockout"], event.format)}${select("Team assignment method", "teamMode", ["random", "balanced", "same-rank", "manual", "player-selected"], event.teamMode)}${select(
+  )}</div><div class="divider"></div><h3 class="mb-4">Teams & scoring</h3><div class="form-grid">${select("Match / tournament format", "format", [["random", "Random queue (new teams every round)"], "balanced", "round-robin", "rotating", "single-elimination", "double-elimination", "group-knockout"], event.format)}${select("Team assignment method", "teamMode", ["random", "balanced", "same-rank", "manual", "player-selected"], event.teamMode)}${select(
     "Target points",
     "targetPoints",
     [
@@ -99,7 +100,7 @@ export async function eventForm(content, state, id) {
       [3, "Best of three"],
     ],
     event.bestOf,
-  )}${input("Match duration (minutes)", "matchDuration", event.matchDuration, "number", 'required min="5" max="180"')}${input("Rounds (random, balanced, or rotating)", "rounds", event.rounds, "number", 'required min="1" max="30"')}${input("Groups (group stage + knockout)", "groupCount", event.groupCount, "number", 'required min="2" max="8"')}${select("Event status", "status", ["draft", "published", "registration-open", "registration-closed", "ongoing", "completed", "cancelled"], event.status)}<div class="pt-4"><label class="d-block mb-2"><input type="checkbox" name="rated" ${event.rated ? "checked" : ""}> Ranked doubles matches (stars and hidden MMR)</label><label class="d-block mb-2"><input type="checkbox" name="waitlistEnabled" ${event.waitlistEnabled ? "checked" : ""}> Enable waiting list</label><label><input type="checkbox" name="grandFinalReset" ${event.grandFinalReset ? "checked" : ""}> Grand-final reset in double elimination</label></div></div><p class="subtle mt-4">All dates use your browser’s local timezone. Tournament matches are scheduled as their participants become known. Fees are recorded for club administration; payment collection is outside this application.</p><div id="form-error" role="alert"></div><div class="form-actions"><a class="btn btn-secondary" href="#/events">Cancel</a><button type="submit" class="btn btn-primary">${id ? "Save changes" : "Create event"}</button></div></form>`;
+  )}${input("Match duration (minutes)", "matchDuration", event.matchDuration, "number", 'required min="5" max="180"')}${input("Rounds (random, balanced, or rotating)", "rounds", event.rounds, "number", 'required min="1" max="30"')}${input("Groups (group stage + knockout)", "groupCount", event.groupCount, "number", 'required min="2" max="8"')}${select("Event status", "status", ["draft", "published", "registration-open", "registration-closed", "ongoing", "completed", "cancelled"], event.status)}<div class="pt-4"><label class="d-block mb-2"><input type="checkbox" name="rated" ${event.rated ? "checked" : ""}> Enable rankings for this event (stars and win/loss records)</label><label class="d-block mb-2"><input type="checkbox" name="waitlistEnabled" ${event.waitlistEnabled ? "checked" : ""}> Enable waiting list</label><label><input type="checkbox" name="grandFinalReset" ${event.grandFinalReset ? "checked" : ""}> Grand-final reset in double elimination</label></div></div><p class="subtle mt-4">Random queue shuffles teammates and opponents every round, with fewer-played players going first. Pairings may repeat by chance. All dates use your browser’s local timezone. Tournament matches are scheduled as their participants become known. Fees are recorded for club administration; payment collection is outside this application.</p><div id="form-error" role="alert"></div><div class="form-actions"><a class="btn btn-secondary" href="#/events">Cancel</a><button type="submit" class="btn btn-primary">${id ? "Save changes" : "Create event"}</button></div></form>`;
   const formats = document.querySelector("#format");
   const updateFormats = () => {
     const tournament =
@@ -118,7 +119,7 @@ export async function eventForm(content, state, id) {
         ).includes(o.value)),
     );
     if (formats.selectedOptions[0].disabled)
-      formats.value = tournament ? "single-elimination" : "round-robin";
+      formats.value = tournament ? "single-elimination" : "random";
   };
   document.querySelector("#eventType").onchange = updateFormats;
   updateFormats();
@@ -162,7 +163,7 @@ export async function eventDetail(content, state, id) {
     { events } = await api("/events");
   const registration = events.find((e) => e._id === id)?.registration;
   const admin = state.user.role === "admin";
-  content.innerHTML = `<div class="page-heading"><div><a href="#/events" class="subtle">← All events</a><div class="mt-3 mb-2"><span class="badge green">${event.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(event.status.replaceAll("-", " "))}</span></div><h1>${esc(event.eventName)}</h1><p>${esc(event.location)} · ${date(event.startDateTime)} · ${time(event.startDateTime)}–${time(event.endDateTime)}</p></div>${admin ? `<a class="btn btn-secondary" href="#/events/${id}/edit">${icon("sliders-horizontal")} Edit event</a>` : ""}</div><div class="event-tabs"><button data-tab="overview" class="active">Overview</button>${admin ? '<button data-tab="participants">Participants</button>' : ""}<button data-tab="teams">Teams</button><button data-tab="matches">Matches${event.eventType === "tournament" ? " & bracket" : ""}</button></div><div id="event-content"></div>`;
+  content.innerHTML = `<div class="page-heading"><div><a href="#/events" class="subtle">← All events</a><div class="mt-3 mb-2"><span class="badge green">${event.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(event.status.replaceAll("-", " "))}</span></div><h1>${esc(event.eventName)}</h1><p>${esc(event.location)} · ${date(event.startDateTime)} · ${time(event.startDateTime)}–${time(event.endDateTime)}</p></div>${admin ? `<a class="btn btn-secondary" href="#/events/${id}/edit">${icon("sliders-horizontal")} Edit event</a>` : ""}</div><div class="event-tabs"><button data-tab="overview" class="active">Overview</button>${admin ? '<button data-tab="participants">Participants</button>' : ""}${admin && event.eventType === "open-play" && event.format === "random" ? '<button data-tab="queue">Live queue</button>' : ""}<button data-tab="teams">Teams</button><button data-tab="rankings">Rankings</button><button data-tab="matches">Matches${event.eventType === "tournament" ? " & bracket" : ""}</button></div><div id="event-content"></div>`;
   const container = document.querySelector("#event-content");
   async function overview() {
     const level = state.user.officialRanking || state.user.provisionalRanking;
@@ -172,7 +173,7 @@ export async function eventDetail(content, state, id) {
       new Date() >= new Date(event.registrationOpen) &&
       new Date() < new Date(event.registrationDeadline);
     const joined = ["confirmed", "waitlisted"].includes(registration);
-    container.innerHTML = `<div class="stats-grid"><div class="stat-card"><div class="stat-top">Player spots</div><div class="stat-value">${event.confirmedCount}<span class="muted fs-6"> / ${event.capacity}</span></div><div class="stat-foot">${event.waitlistEnabled ? "Waiting list enabled" : "Limited capacity"}</div></div><div class="stat-card"><div class="stat-top">Skill levels</div><div class="stat-value">${event.minRanking}–${event.maxRanking}</div><div class="stat-foot">${esc(state.rankings[event.minRanking - 1])} and above</div></div><div class="stat-card"><div class="stat-top">Courts</div><div class="stat-value">${event.courts.length}</div><div class="stat-foot">${event.courts.map(esc).join(", ")}</div></div><div class="stat-card"><div class="stat-top">Registration fee</div><div class="stat-value">${event.fee ? `₱${event.fee.toLocaleString()}` : "Free"}</div><div class="stat-foot">${event.fee ? "Arrange payment with your club" : "Just bring your paddle"}</div></div></div><div class="profile-grid"><div class="panel"><h3>About this event</h3><p class="mt-3" style="white-space:pre-line">${esc(event.description) || "A chance to meet your club on court."}</p><div class="divider"></div><h3>How we’re playing</h3><p class="mt-3">${esc(event.format.replaceAll("-", " "))} · ${event.bestOf === 3 ? "Best of three" : "Single game"} · First to ${event.targetPoints}, win by ${event.winningMargin}</p><p class="subtle">${event.matchDuration} minutes per match · ${esc(event.teamMode)} team assignment</p></div><div class="panel"><h3>${joined ? "You’re on the list." : "Ready to rally?"}</h3><p class="mt-3">Registration closes<br><strong>${date(event.registrationDeadline)} · ${time(event.registrationDeadline)}</strong></p>${joined ? `<span class="badge green">${registration.toUpperCase()}</span><button class="btn btn-secondary d-block mt-4" id="cancel-registration" ${new Date() >= new Date(event.registrationDeadline) || event.finalizedBatch ? "disabled" : ""}>Cancel registration</button>` : `<button class="btn btn-primary" id="register-event" ${!open || !eligible || event.finalizedBatch || (event.confirmedCount >= event.capacity && !event.waitlistEnabled) ? "disabled" : ""}>${event.confirmedCount >= event.capacity ? "Join waiting list" : "Register now"} ${icon("arrow-right")}</button><p class="subtle mt-3">${!eligible ? "Your skill level is outside this event’s range." : !open ? "Registration is not currently open." : "Your place is confirmed when a spot is available."}</p>`}${admin ? `<div class="divider"></div><button class="btn btn-danger btn-sm" id="delete-event">Delete empty event</button>` : ""}</div></div>`;
+    container.innerHTML = `<div class="stats-grid"><div class="stat-card"><div class="stat-top">Player spots</div><div class="stat-value">${event.confirmedCount}<span class="muted fs-6"> / ${event.capacity}</span></div><div class="stat-foot">${event.waitlistEnabled ? "Waiting list enabled" : "Limited capacity"}</div></div><div class="stat-card"><div class="stat-top">Skill levels</div><div class="stat-value">${event.minRanking}–${event.maxRanking}</div><div class="stat-foot">${esc(state.rankings[event.minRanking - 1])} and above</div></div><div class="stat-card"><div class="stat-top">Courts</div><div class="stat-value">${event.courts.length}</div><div class="stat-foot">${event.courts.map(esc).join(", ")}</div></div><div class="stat-card"><div class="stat-top">Registration fee</div><div class="stat-value">${event.fee ? `₱${event.fee.toLocaleString()}` : "Free"}</div><div class="stat-foot">${event.fee ? "Arrange payment with your club" : "Just bring your paddle"}</div></div></div><div class="profile-grid"><div class="panel"><h3>About this event</h3><p class="mt-3" style="white-space:pre-line">${esc(event.description) || "A chance to meet your club on court."}</p><div class="divider"></div><h3>How we’re playing</h3><p class="mt-3">${esc(event.format.replaceAll("-", " "))} · ${event.bestOf === 3 ? "Best of three" : "Single game"} · First to ${event.targetPoints}, win by ${event.winningMargin}</p><p class="subtle">${event.matchDuration} minutes per match · ${esc(event.teamMode)} team assignment</p></div><div class="panel"><h3>${joined ? "You’re on the list." : "Ready to rally?"}</h3><p class="mt-3">Registration closes<br><strong>${date(event.registrationDeadline)} · ${time(event.registrationDeadline)}</strong></p>${joined ? `<span class="badge green">${registration.toUpperCase()}</span><button class="btn btn-secondary d-block mt-4" id="cancel-registration" ${new Date() >= new Date(event.registrationDeadline) || event.finalizedBatch ? "disabled" : ""}>Cancel registration</button>` : `<button class="btn btn-primary" id="register-event" ${!open || !eligible || event.finalizedBatch || (event.confirmedCount >= event.capacity && !event.waitlistEnabled) ? "disabled" : ""}>${event.confirmedCount >= event.capacity ? "Join waiting list" : "Register now"} ${icon("arrow-right")}</button><p class="subtle mt-3">${!eligible ? "Your skill level is outside this event’s range." : !open ? "Registration is not currently open." : "Your place is confirmed when a spot is available."}</p>`}${admin ? `<div class="divider"></div><button class="btn btn-danger btn-sm" id="delete-event">Delete event</button>` : ""}</div></div>`;
     if (document.querySelector("#register-event"))
       document.querySelector("#register-event").onclick = async () => {
         await api(`/events/${id}/register`, "POST", {});
@@ -197,11 +198,19 @@ export async function eventDetail(content, state, id) {
         if (
           await confirm(
             "Delete this event?",
-            "Only events without registration or match history can be deleted.",
+            "This permanently deletes the event, registrations, queue, teams, and match results. Player rankings will be recalculated. This cannot be undone.",
           )
         ) {
-          await api(`/events/${id}`, "DELETE");
-          location.hash = "#/events";
+          const button = document.querySelector("#delete-event");
+          button.disabled = true;
+          try {
+            await api(`/events/${id}`, "DELETE");
+            toast("Event deleted");
+            location.hash = "#/events";
+          } catch (error) {
+            toast(error.message);
+            button.disabled = false;
+          }
         }
       };
   }
@@ -261,7 +270,7 @@ export async function eventDetail(content, state, id) {
       : [];
     const assigned = teams.flatMap((t) => t.players.map((p) => p._id));
     const unassigned = participants.filter((p) => !assigned.includes(p._id));
-    container.innerHTML = `${admin && !finalized ? '<div class="notice">Draft workspace · Generate or adjust teams, then publish when you’re ready. Numerical doubles Elo provides an approximate balancing guide.</div>' : ""}<section class="panel"><div class="panel-header"><h3>${finalized ? "Official teams" : "Team assignments"}</h3><div class="inline-actions">${admin && !finalized ? `<select id="team-mode" class="form-select" aria-label="Generation mode"><option value="balanced">Elo-balanced random</option><option value="random">Completely random</option><option value="same-rank">Same-rank random</option></select><button class="btn btn-primary" id="generate-teams">${icon("shuffle")}${teams.length ? "Regenerate" : "Generate teams"}</button><button class="btn btn-secondary" id="manual-teams">Manual teams</button>` : ""}${teams.length ? '<button class="btn btn-secondary" id="export-teams">Export</button>' : ""}</div></div>${teams.length ? `<div class="table-wrap"><table><thead><tr><th>Team</th><th>Player 1</th><th>Level</th><th>Player 2</th><th>Level</th><th>Combined Elo</th></tr></thead><tbody>${teams.map((t, i) => `<tr><td><strong>${String(i + 1).padStart(2, "0")}</strong></td>${t.players.map((p) => `<td>${admin && !finalized ? `<select class="form-select team-player" aria-label="Team ${i + 1} player">${participants.map((x) => `<option value="${x._id}" ${x._id === p._id ? "selected" : ""}>${esc(x.fullName)}</option>`).join("")}</select>` : esc(p.fullName)}</td><td>${p.officialRanking || p.provisionalRanking}<div class="subtle">${ratingValue(p).toFixed(1)} Elo</div></td>`).join("")}<td><span class="badge green">${(t.combinedRating ?? t.players.reduce((n, p) => n + ratingValue(p), 0)).toFixed(1)}</span></td></tr>`).join("")}</tbody></table></div>` : empty("No teams published yet", admin ? "Generate a draft from confirmed participants or assign players manually." : "Your club will publish teams here before play begins.")}${admin && unassigned.length ? `<div class="notice mt-4"><strong>Unassigned / substitutes:</strong> ${unassigned.map((p) => esc(p.fullName)).join(", ")}<p class="mb-0 mt-2">No incomplete teams are created. You can adjust the roster, or explicitly retain these players as substitutes. Rotating-partner schedules include the confirmed roster.</p></div>` : ""}${admin && teams.length && !finalized ? '<div class="form-actions"><button class="btn btn-secondary" id="save-teams">Save adjustments</button><button class="btn btn-primary" id="finalize-teams">Finalize teams</button></div><p class="subtle mt-3 text-end">To swap partners, exchange both dropdown selections before saving.</p>' : ""}</section>`;
+    container.innerHTML = `${admin && !finalized ? '<div class="notice">Draft workspace · Generate or adjust teams, then publish when you’re ready. Numerical doubles Elo provides an approximate balancing guide.</div>' : ""}<section class="panel"><div class="panel-header"><h3>${finalized ? "Official teams" : "Team assignments"}</h3><div class="inline-actions">${admin && !finalized ? `<select id="team-mode" class="form-select" aria-label="Generation mode"><option value="balanced">Elo-balanced random</option><option value="random">Completely random</option><option value="same-rank">Same-rank random</option></select><button class="btn btn-primary" id="generate-teams">${icon("shuffle")}${teams.length ? "Regenerate" : "Generate teams"}</button><button class="btn btn-secondary" id="manual-teams">Manual teams</button>` : ""}${teams.length ? '<button class="btn btn-secondary" id="export-teams">Export</button>' : ""}</div></div>${teams.length ? `<div class="table-wrap"><table><thead><tr><th>Team</th><th>Player 1</th><th>Level</th><th>Player 2</th><th>Level</th><th>Combined Elo</th></tr></thead><tbody>${teams.map((t, i) => `<tr><td><strong>${String(i + 1).padStart(2, "0")}</strong></td>${t.players.map((p) => `<td>${admin && !finalized ? `<select class="form-select team-player" aria-label="Team ${i + 1} player">${participants.map((x) => `<option value="${x._id}" ${x._id === p._id ? "selected" : ""}>${esc(x.fullName)}</option>`).join("")}</select>` : esc(p.fullName)}</td><td>${p.officialRanking || p.provisionalRanking}<div class="subtle">${ratingValue(p).toFixed(1)} Elo</div></td>`).join("")}<td><span class="badge green">${(t.combinedRating ?? t.players.reduce((n, p) => n + ratingValue(p), 0)).toFixed(1)}</span></td></tr>`).join("")}</tbody></table></div>` : empty("No teams published yet", admin ? "Generate a draft from confirmed participants or assign players manually." : "Your club will publish teams here before play begins.")}${admin && unassigned.length ? `<div class="notice mt-4"><strong>Unassigned / substitutes:</strong> ${unassigned.map((p) => esc(p.fullName)).join(", ")}<p class="mb-0 mt-2">No incomplete teams are created. You can adjust the roster, or explicitly retain these players as substitutes. Random queue and rotating-partner schedules include the confirmed roster.</p></div>` : ""}${admin && teams.length && !finalized ? '<div class="form-actions"><button class="btn btn-secondary" id="save-teams">Save adjustments</button><button class="btn btn-primary" id="finalize-teams">Finalize teams</button></div><p class="subtle mt-3 text-end">To swap partners, exchange both dropdown selections before saving.</p>' : ""}</section>`;
     if (document.querySelector("#generate-teams"))
       document.querySelector("#generate-teams").onclick = async () => {
         if (
@@ -637,8 +646,33 @@ export async function eventDetail(content, state, id) {
       }
     lucide.createIcons();
   }
+  let rankingPage = 1;
+  async function rankingsTab() {
+    const data = await api(
+      `/ranking/leaderboard?period=event&eventId=${id}&page=${rankingPage}&limit=50`,
+    );
+    container.innerHTML = `<section class="panel"><div class="panel-header"><h3>Event rankings</h3><span class="badge ${event.rated ? "green" : ""}">${event.rated ? "Ranked event" : "Unranked event"}</span></div><p>Standings use net stars earned in this event, then wins. Only finalized ranked matches count. Corrections update these standings automatically.</p>${admin ? `<p class="subtle">Enable rankings in <a href="#/events/${id}/edit">Edit event</a> before recording results. Individual matches can be marked ranked or unranked in Matches.</p>` : ""}<div class="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th>Current club rank</th><th>Event stars</th><th>Wins</th><th>Losses</th><th>Win rate</th></tr></thead><tbody>${data.rows.map((p) => `<tr><td>${p.position}</td><td>${esc(p.fullName)}</td><td>${esc(p.rankTier)} ${esc(p.rankDivision || "")}</td><td>${p.totalStars > 0 ? "+" : ""}${p.totalStars}</td><td>${p.totalWins}</td><td>${p.totalLosses}</td><td>${p.winPercentage.toFixed(1)}%</td></tr>`).join("") || '<tr><td colspan="7">No ranked player profiles yet. Standings appear after ranked results are finalized.</td></tr>'}</tbody></table></div><div class="form-actions"><button class="btn btn-secondary" id="event-rank-prev" ${rankingPage === 1 ? "disabled" : ""}>Previous</button><span>Page ${rankingPage}</span><button class="btn btn-secondary" id="event-rank-next" ${rankingPage * 50 >= data.total ? "disabled" : ""}>Next</button></div></section>`;
+    for (const [selector, step] of [
+      ["#event-rank-prev", -1],
+      ["#event-rank-next", 1],
+    ])
+      container.querySelector(selector).onclick = async () => {
+        rankingPage += step;
+        try {
+          await rankingsTab();
+        } catch (error) {
+          toast(error.message);
+        }
+      };
+  }
+  const queueTab = () =>
+    renderQueue(container, event, () =>
+      content.querySelector('[data-tab="participants"]').click(),
+    );
   const tabs = {
+    queue: queueTab,
     overview,
+    rankings: rankingsTab,
     participants: participantsTab,
     teams: teamsTab,
     matches: matchesTab,
@@ -651,7 +685,9 @@ export async function eventDetail(content, state, id) {
     )
       return;
     const tab = content.querySelector("[data-tab].active")?.dataset.tab;
-    if (tab === "matches") await matchesTab();
+    if (tab === "queue") await queueTab();
+    else if (tab === "rankings") await rankingsTab();
+    else if (tab === "matches") await matchesTab();
     else if (tab === "teams" && !container.querySelector("#save-teams"))
       await teamsTab();
   };

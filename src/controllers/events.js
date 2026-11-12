@@ -302,15 +302,24 @@ export const eventController = {
   },
   remove: async (req, res) => {
     await mongoose.connection.transaction(async (session) => {
-      const event = await lockEvent(req.params.id, session);
-      ensure(
-        !(await EventRegistration.exists({ eventId: event._id }).session(
-          session,
-        )) && !(await Match.exists({ eventId: event._id }).session(session)),
-        "Events with history must be cancelled, not deleted",
+      await lockRatings(session);
+      const event = await Event.findByIdAndUpdate(
+        req.params.id,
+        { $inc: { revision: 1 } },
+        { returnDocument: "after", session },
       );
-      await Team.deleteMany({ eventId: event._id }, { session });
+      ensure(event, "Event not found", 404);
+      for (const model of [
+        Match,
+        Team,
+        EventRegistration,
+        TeamProposal,
+        Tournament,
+      ])
+        await model.deleteMany({ eventId: event._id }, { session });
       await Event.deleteOne({ _id: event._id }, { session });
+      await rebuildRatings(session);
+      await rebuildStarRankings(session, { actorId: req.user._id });
       await audit(
         req.user._id,
         "delete",
@@ -557,7 +566,7 @@ export const eventController = {
         await buildBracket(event, teams, session);
       else {
         let rounds;
-        if (event.format === "rotating") {
+        if (["random", "rotating"].includes(event.format)) {
           const players = await participants(event._id, session);
           const counts = new Map(players.map((p) => [String(p._id), 0]));
           const previous = [];
@@ -571,7 +580,11 @@ export const eventController = {
             active.forEach((p) =>
               counts.set(String(p._id), counts.get(String(p._id)) + 1),
             );
-            const draft = generateTeams(active, "balanced", previous);
+            const draft = generateTeams(
+              active,
+              event.format === "random" ? "random" : "balanced",
+              previous,
+            );
             previous.push(...draft.teams.map((t) => t.players));
             const roundTeams = await Team.insertMany(
               draft.teams.map((t) => ({
@@ -583,7 +596,12 @@ export const eventController = {
               })),
               { session },
             );
-            rounds.push(rotatingMatchups(roundTeams, rounds.flat()));
+            if (event.format === "random") {
+              const pairs = [];
+              for (let i = 0; i < roundTeams.length; i += 2)
+                pairs.push([roundTeams[i], roundTeams[i + 1]]);
+              rounds.push(pairs);
+            } else rounds.push(rotatingMatchups(roundTeams, rounds.flat()));
           }
         } else if (event.format === "round-robin")
           rounds = roundRobin(shuffle(teams));
@@ -836,6 +854,11 @@ export const eventController = {
       await lockRatings(session);
       const match = await Match.findById(req.params.id).session(session);
       ensure(match, "Match not found", 404);
+      ensure(
+        match.stage !== "queue",
+        "Use score correction for live queue results; completed players may already be in another game",
+        409,
+      );
       const event = await lockEvent(match.eventId, session, true);
       ensure(
         match.matchStatus === "finalized",
@@ -888,6 +911,11 @@ export const eventController = {
     await mongoose.connection.transaction(async (session) => {
       const match = await Match.findById(req.params.id).session(session);
       ensure(match, "Match not found", 404);
+      ensure(
+        match.stage !== "queue",
+        "Live queue courts are assigned with Call Players",
+        409,
+      );
       const event = await lockEvent(match.eventId, session);
       ensure(
         match.matchStatus === "scheduled",

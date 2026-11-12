@@ -84,7 +84,7 @@ export function rankingRoutes() {
     const query = z
       .object({
         period: z
-          .enum(["current", "all-time", "month", "season"])
+          .enum(["current", "all-time", "month", "season", "event"])
           .default("current"),
         seasonId: id.optional(),
         eventId: id.optional(),
@@ -97,6 +97,16 @@ export function rankingRoutes() {
     ensure(query.success, "Invalid leaderboard filters");
     const q = query.data,
       show = await visible(req);
+    ensure(q.period !== "event" || q.eventId, "Select an event");
+    if (q.period === "event")
+      ensure(
+        await Event.exists({
+          _id: q.eventId,
+          ...(req.user.role === "admin" ? {} : { status: { $ne: "draft" } }),
+        }),
+        "Event not found",
+        404,
+      );
     let profiles = await PlayerRanking.find()
       .populate("userId", "fullName profileImage active role")
       .lean();
@@ -124,19 +134,21 @@ export function rankingRoutes() {
     }
     const now = new Date();
     const historyFilter =
-      q.period === "month"
-        ? {
-            kind: "match",
-            timestamp: {
-              $gte: new Date(
-                Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-              ),
-              $lte: now,
-            },
-          }
-        : q.period === "season"
-          ? { kind: "match", seasonId }
-          : null;
+      q.period === "event"
+        ? { kind: "match", eventId: q.eventId }
+        : q.period === "month"
+          ? {
+              kind: "match",
+              timestamp: {
+                $gte: new Date(
+                  Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+                ),
+                $lte: now,
+              },
+            }
+          : q.period === "season"
+            ? { kind: "match", seasonId }
+            : null;
     const performance = new Map();
     if (historyFilter)
       for (const h of await RankingHistory.find(historyFilter).lean()) {
@@ -156,12 +168,11 @@ export function rankingRoutes() {
             wins: 0,
             matches: 0,
           };
-        const stars =
-          q.period === "month"
-            ? perf.stars
-            : q.period === "all-time"
-              ? s.lifetimeStars
-              : s.rankStars;
+        const stars = ["month", "event"].includes(q.period)
+          ? perf.stars
+          : q.period === "all-time"
+            ? s.lifetimeStars
+            : s.rankStars;
         const wins = historyFilter ? perf.wins : s.totalWins,
           matches = historyFilter ? perf.matches : s.rankedMatches;
         return {
@@ -172,6 +183,7 @@ export function rankingRoutes() {
           totalStars: stars,
           totalWins: wins,
           rankedMatches: matches,
+          totalLosses: matches - wins,
           winPercentage: matches ? (100 * wins) / matches : 0,
           mmr: s.mmr,
         };
@@ -185,7 +197,7 @@ export function rankingRoutes() {
     rows.sort(
       (a, b) =>
         b.totalStars - a.totalStars ||
-        b.mmr - a.mmr ||
+        (q.period === "event" ? b.totalWins - a.totalWins : b.mmr - a.mmr) ||
         b.totalWins - a.totalWins ||
         a.playerId.localeCompare(b.playerId),
     );
@@ -205,11 +217,13 @@ export function rankingRoutes() {
       total,
       page: q.page,
       label:
-        q.period === "month"
-          ? "Monthly net stars earned (UTC)"
-          : q.period === "all-time"
-            ? "Lifetime match stars (resets excluded)"
-            : "Cumulative rank stars",
+        q.period === "event"
+          ? "Net stars earned in this event"
+          : q.period === "month"
+            ? "Monthly net stars earned (UTC)"
+            : q.period === "all-time"
+              ? "Lifetime match stars (resets excluded)"
+              : "Cumulative rank stars",
     });
   });
   r.get("/ranking/players/:id", async (req, res) => {

@@ -72,6 +72,8 @@ Verification and reset tokens expire after one hour, are stored as SHA-256 diges
 
 The **Ranked clubhouse** adds Rookie-to-Legend stars, protection and double-star meters, hidden competitive MMR, ranked leaderboards, season resets, and audited corrections. It reuses existing user accounts, event registration, team editing, brackets, scoring, and JWT roles. See [star-ranking.md](docs/star-ranking.md) for rules, APIs, migrations, workflow, verification, and deployment limits. The existing skill-category Elo described below remains separate.
 
+Open play events and tournaments have a **Rankings** tab. Enable **Enable rankings for this event** in event setup before recording results. Standings show event-only net stars, wins, losses, and win rate alongside current club rank; finalized ranked matches count, and corrections recalculate standings. The API is `GET /api/ranking/leaderboard?period=event&eventId=EVENT_ID` (paginated).
+
 ## Automatic player ranking
 
 The doubles Elo engine integrates with official results, team balancing, leaderboards, and the player dashboard. It defaults to disabled for existing clubs. See [automatic-ratings.md](docs/automatic-ratings.md) for enabling it, the K=32 algorithm, ten-match confirmation, hysteresis, manual overrides, replay semantics, migration, and API payloads. The versioned migration runs on server startup; `npm.cmd run migrate` is also available for a configured persistent database.
@@ -174,3 +176,9 @@ The app detects Render through `RENDER=true` and trusts one proxy hop even if `N
 `APP_URL` is normalized to its origin, so a trailing slash or pasted login path does not break login. On Render, a missing or localhost `APP_URL` falls back to `RENDER_EXTERNAL_URL`. The configured origin and the service's Render origin are allowed consistently for API requests and Socket.IO. Other origins remain blocked. Set `APP_URL` to your canonical HTTPS domain for email links.
 
 The repository selects Node 24. An explicit Render `NODE_VERSION` takes precedence, so remove an override or set it to `24`. Atlas network access must still allow the service's outbound IP ranges; application changes cannot modify Atlas access rules.
+
+## Live random queue
+
+For the court-and-waiting-list workflow, create an open-play event with **Random queue (new teams every round)** and open its **Live queue** tab as an administrator. Add confirmed participants through **Add player**, then select **Add match** to reserve the next four players and randomize their teams. Choose a free court and select **Call Players**. The blue/orange winner buttons ask for actual game scores; saving updates results and returns all four players to the waiting queue. Fewest games are prioritized, followed by longest waiting time. Pairings can repeat by chance.
+
+Up Next matches persist across refreshes and can be released back to the queue. Live courts cannot be double-booked. This workflow is separate from publishing a fixed schedule: use an event without an existing schedule, and skip team finalization. Existing scheduled events are preserved. The queue currently uses fair rotation, not winner/loser priority groups.

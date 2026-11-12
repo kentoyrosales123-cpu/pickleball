@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
-import { Event, EventRegistration, User, Team } from "../models/index.js";
+import {
+  Event,
+  EventRegistration,
+  User,
+  Team,
+  Match,
+} from "../models/index.js";
 import { ensure } from "../middleware/security.js";
 import { notify, audit, publish } from "./notifications.js";
 export async function registerPlayer(eventId, userId, actor, cancel = false) {
@@ -21,6 +27,19 @@ export async function registerPlayer(eventId, userId, actor, cancel = false) {
     const isAdmin = actor.role === "admin";
     const now = new Date();
     if (cancel) {
+      const assigned = await Team.find({ eventId, players: userId })
+        .distinct("_id")
+        .session(session);
+      ensure(
+        !(await Match.exists({
+          eventId,
+          stage: "queue",
+          matchStatus: { $in: ["pending", "scheduled"] },
+          $or: [{ teamA: { $in: assigned } }, { teamB: { $in: assigned } }],
+        }).session(session)),
+        "Release the Up Next match or finish the live game before removing this player",
+        409,
+      );
       ensure(
         isAdmin || now < event.registrationDeadline,
         "Cancellation deadline has passed",

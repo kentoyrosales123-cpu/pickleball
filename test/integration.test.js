@@ -654,6 +654,51 @@ test("rotating partners fairly rotate an odd roster without player or court over
   }
   assert.equal(Math.max(...counts.values()) - Math.min(...counts.values()), 0);
 });
+test("random queue creates fresh teams each round and fairly rotates an odd roster", async () => {
+  const event = await createEvent({ format: "random", rounds: 9 });
+  for (const p of players.slice(0, 9))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  await call("post", `/events/${event._id}/generate-teams`, {
+    mode: "balanced",
+  });
+  assert.equal(
+    (
+      await call("post", `/events/${event._id}/finalize-teams`, {
+        allowSubstitutes: true,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await call("post", `/events/${event._id}/generate-matches`, {})).status,
+    200,
+  );
+  const matches = await Match.find({ eventId: event._id }).populate(
+    "teamA teamB",
+  );
+  assert.equal(matches.length, 18);
+  assert.equal(
+    new Set(matches.flatMap((m) => [String(m.teamA._id), String(m.teamB._id)]))
+      .size,
+    36,
+  );
+  for (const m of matches) {
+    assert.equal(m.teamA.roundNumber, m.roundNumber);
+    assert.equal(m.teamB.roundNumber, m.roundNumber);
+  }
+  const counts = new Map(players.slice(0, 9).map((p) => [String(p._id), 0]));
+  for (const round of new Set(matches.map((m) => m.roundNumber))) {
+    const active = matches
+      .filter((m) => m.roundNumber === round)
+      .flatMap((m) => [...m.teamA.players, ...m.teamB.players].map(String));
+    assert.equal(active.length, 8);
+    assert.equal(new Set(active).size, 8);
+    active.forEach((id) => counts.set(id, counts.get(id) + 1));
+  }
+  assert.equal(Math.max(...counts.values()) - Math.min(...counts.values()), 0);
+});
 test("court changes enforce overlap, event window and administrator checks", async () => {
   const event = await createEvent();
   await prepare(event, 8);
@@ -805,4 +850,168 @@ test("admins create player accounts without replacing their session", async () =
     "",
   );
   assert.equal(login.status, 200);
+});
+
+test("live queue reserves players, serializes courts, records results and returns players fairly", async () => {
+  const event = await createEvent({ format: "random", courts: ["1", "2"] });
+  const base = `/events/${event._id}/queue`;
+  for (const p of players.slice(0, 9))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  assert.equal((await call("get", base, undefined, playerCookie)).status, 403);
+  const prepared = await Promise.all([
+    call("post", `${base}/prepare`, {}),
+    call("post", `${base}/prepare`, {}),
+  ]);
+  assert.deepEqual(
+    prepared.map((r) => r.status),
+    [200, 200],
+  );
+  let data = (await call("get", base)).body;
+  assert.equal(data.waiting.length, 1);
+  const reserved = data.next.flatMap((m) =>
+    [...m.teamA.players, ...m.teamB.players].map((p) => p._id),
+  );
+  assert.equal(new Set(reserved).size, 8);
+  assert.equal(
+    (await call("delete", `/events/${event._id}/participants/${reserved[0]}`))
+      .status,
+    409,
+  );
+  const starts = await Promise.all(
+    data.next.map((m) =>
+      call("post", `${base}/${m._id}/start`, { court: "1" }),
+    ),
+  );
+  assert.deepEqual(starts.map((r) => r.status).sort(), [200, 409]);
+  data = (await call("get", base)).body;
+  const live = data.live[0],
+    next = data.next[0];
+  assert.equal(
+    (await call("post", `${base}/${next._id}/start`, { court: "invalid" }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (
+      await call("post", `/matches/${live._id}/results`, {
+        scores: [{ a: 11, b: 5 }],
+        revision: 0,
+      })
+    ).status,
+    200,
+  );
+  data = (await call("get", base)).body;
+  assert.equal(data.live.length, 0);
+  assert.equal(data.waiting.length, 5);
+  assert.equal(data.waiting[0].games, 0);
+  assert.equal(data.waiting.filter((p) => p.lastResult === "W").length, 2);
+  assert.equal((await call("delete", `${base}/${next._id}`)).status, 200);
+  assert.equal((await call("get", base)).body.waiting.length, 9);
+  assert.equal(
+    (
+      await call("post", `/matches/${live._id}/results`, {
+        scores: [{ a: 11, b: 5 }],
+        revision: 0,
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await call("get", base)).body.completed, 1);
+
+  const dom = new JSDOM('<main id="queue"></main>', {
+    url: "http://localhost:3000/",
+  });
+  const original = {
+    document: globalThis.document,
+    fetch: globalThis.fetch,
+    Swal: globalThis.Swal,
+  };
+  globalThis.document = dom.window.document;
+  globalThis.Swal = { fire: async () => ({ isConfirmed: true }) };
+  globalThis.fetch = async (url, options = {}) => {
+    const res = await call(
+      (options.method || "GET").toLowerCase(),
+      url.replace(/^\/api/, ""),
+      options.body ? JSON.parse(options.body) : undefined,
+    );
+    return {
+      ok: res.status < 400,
+      status: res.status,
+      json: async () => res.body,
+    };
+  };
+  try {
+    const { renderQueue } = await import("../public/js/queue.js");
+    await renderQueue(document.querySelector("#queue"), event, () => {});
+    assert.equal(
+      document.querySelectorAll(".queue-courts .queue-card").length,
+      2,
+    );
+    assert.equal(document.querySelectorAll(".queue-waiting li").length, 9);
+    await document
+      .querySelector("#queue-prepare")
+      .onclick({ currentTarget: document.querySelector("#queue-prepare") });
+    assert.equal(document.querySelectorAll(".queue-upnext").length, 1);
+    await document.querySelector("[data-start]").onclick();
+    assert.equal(document.querySelectorAll(".queue-live").length, 1);
+    assert.equal(document.querySelectorAll("[data-win]").length, 2);
+  } finally {
+    Object.assign(globalThis, original);
+    dom.window.close();
+  }
+});
+
+test("admins can delete populated closed events and rankings are rebuilt atomically", async () => {
+  const { RankingHistory } = await import("../src/models/ranking.js");
+  const { TeamProposal, AuditLog, RatingHistory } =
+    await import("../src/models/index.js");
+  const event = await createEvent({ rated: true });
+  await prepare(event, 4);
+  const match = await Match.findOne({ eventId: event._id });
+  assert.equal(
+    (
+      await call("post", `/matches/${match._id}/results`, {
+        scores: [{ a: 11, b: 4 }],
+        revision: 0,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(await RankingHistory.countDocuments({ eventId: event._id }), 4);
+  assert.equal(
+    (await call("delete", `/events/${event._id}`, undefined, playerCookie))
+      .status,
+    403,
+  );
+  assert.ok(await Event.exists({ _id: event._id }));
+  const other = await createEvent();
+  await Event.updateOne({ _id: event._id }, { status: "completed" });
+  const original = Team.deleteMany;
+  Team.deleteMany = async () => {
+    throw new Error("Injected deletion failure");
+  };
+  try {
+    assert.equal((await call("delete", `/events/${event._id}`)).status, 500);
+  } finally {
+    Team.deleteMany = original;
+  }
+  assert.ok(await Match.exists({ _id: match._id }));
+  assert.ok(await Event.exists({ _id: event._id }));
+  assert.equal((await call("delete", `/events/${event._id}`)).status, 200);
+  assert.equal(await Event.findById(event._id), null);
+  for (const model of [
+    Match,
+    Team,
+    EventRegistration,
+    TeamProposal,
+    Tournament,
+    RankingHistory,
+  ])
+    assert.equal(await model.countDocuments({ eventId: event._id }), 0);
+  assert.equal(await RatingHistory.countDocuments({ matchId: match._id }), 0);
+  assert.ok(await Event.exists({ _id: other._id }));
+  assert.ok(await AuditLog.exists({ action: "delete", entityId: event._id }));
+  assert.equal((await call("delete", `/events/${event._id}`)).status, 404);
 });

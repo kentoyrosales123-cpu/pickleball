@@ -1,3 +1,4 @@
+import { queueController as queue } from "../controllers/queue.js";
 import { rankingRoutes } from "./ranking.js";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
@@ -122,6 +123,15 @@ export function api(config) {
     e.addParticipant,
   );
   r.delete("/events/:id/participants/:userId", admin, e.removeParticipant);
+  r.get("/events/:id/queue", admin, queue.get);
+  r.post("/events/:id/queue/prepare", admin, queue.prepare);
+  r.post(
+    "/events/:id/queue/:matchId/start",
+    admin,
+    validate(z.object({ court: z.string().min(1).max(30) })),
+    queue.start,
+  );
+  r.delete("/events/:id/queue/:matchId", admin, queue.cancel);
   r.get("/events/:id/teams", e.teams);
   r.post(
     "/events/:id/generate-teams",
