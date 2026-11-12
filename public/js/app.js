@@ -421,12 +421,13 @@ async function playersPage(content) {
   content.innerHTML =
     heading(
       "The people behind every rally.",
-      "Manage club membership and confirm player skill levels.",
+      "Manage club membership, account roles and player skill levels.",
+      '<button class="btn btn-secondary" id="refresh-users">Refresh list</button>',
     ) +
-    `<div class="filters"><input class="form-control" id="player-search" placeholder="Search players" aria-label="Search players"><select class="form-select" id="ranking-status" aria-label="Ranking status"><option value="">All rankings</option><option value="provisional">Provisional</option><option value="confirmed">Confirmed</option></select></div><div class="panel" id="players-table"></div>`;
+    `<div id="user-save-status" class="notice mb-3" role="status" aria-live="polite" hidden></div><div class="filters"><input class="form-control" id="player-search" placeholder="Search players" aria-label="Search players"><select class="form-select" id="ranking-status" aria-label="Ranking status"><option value="">All rankings</option><option value="provisional">Provisional</option><option value="confirmed">Confirmed</option></select></div><div class="panel" id="players-table"></div>`;
   const createPanel = document.createElement("details");
   createPanel.className = "panel mb-4";
-  createPanel.innerHTML = `<summary class="fw-bold">Create user</summary><p class="subtle mt-3">Create an account and choose its access level. Share sign-in details securely.</p><form><div class="form-grid"><div><label class="form-label" for="new-user-role">Role</label><select class="form-select" id="new-user-role" name="role"><option value="player">Player</option><option value="admin">Admin - events</option><option value="super-admin">Super Admin - full management</option></select></div>${field("Full name", "fullName", "", "text", 'required minlength="2" maxlength="100"')}${field("Username", "username", "", "text", 'required pattern="[a-zA-Z0-9_]{3,30}" autocomplete="off"')}${field("Email address", "email", "", "email", "required")}${field("Mobile number", "phone", "", "tel", 'required minlength="7" maxlength="30"')}<div><label for="provisionalRanking" class="form-label">Initial skill level</label><select name="provisionalRanking" id="provisionalRanking" class="form-select">${rankings.map((r, i) => `<option value="${i + 1}">${i + 1} - ${esc(r)}</option>`).join("")}</select></div>${field("Password", "password", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}</div><div role="alert"></div><div class="form-actions"><button class="btn btn-primary" type="submit">Create user</button><button class="btn btn-secondary" type="button">Cancel</button></div></form>`;
+  createPanel.innerHTML = `<summary class="fw-bold">Create user</summary><p class="subtle mt-3">Create an account and choose its access level. Passwords need at least 12 characters; usernames use 3 to 30 letters, numbers or underscores. Share sign-in details securely.</p><form><div class="form-grid"><div><label class="form-label" for="new-user-role">Role</label><select class="form-select" id="new-user-role" name="role"><option value="player">Player</option><option value="admin">Admin - events</option><option value="super-admin">Super Admin - full management</option></select></div>${field("Full name", "fullName", "", "text", 'required minlength="2" maxlength="100"')}${field("Username", "username", "", "text", 'required pattern="[a-zA-Z0-9_]{3,30}" autocomplete="off"')}${field("Email address", "email", "", "email", "required")}${field("Mobile number", "phone", "", "tel", 'required minlength="7" maxlength="30"')}<div><label for="provisionalRanking" class="form-label">Initial skill level</label><select name="provisionalRanking" id="provisionalRanking" class="form-select">${rankings.map((r, i) => `<option value="${i + 1}">${i + 1} - ${esc(r)}</option>`).join("")}</select></div>${field("Password", "password", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}</div><div role="alert"></div><div class="form-actions"><button class="btn btn-primary" type="submit">Create user</button><button class="btn btn-secondary" type="button">Cancel</button></div></form>`;
   content.querySelector(".filters").before(createPanel);
   const createForm = createPanel.querySelector("form");
   const createError = createPanel.querySelector("[role=alert]");
@@ -448,7 +449,18 @@ async function playersPage(content) {
       );
       createForm.reset();
       createPanel.open = false;
-      players.unshift({ ...result.user, _id: result.user.id, active: true });
+      const saved = { ...result.user, _id: result.user.id, active: true };
+      let refreshFailed = false;
+      try {
+        const fresh = await api("/admin/users");
+        players.splice(0, players.length, ...fresh.players);
+      } catch {
+        refreshFailed = true;
+      }
+      if (!players.some((p) => p._id === saved._id)) players.unshift(saved);
+      const status = content.querySelector("#user-save-status");
+      status.hidden = false;
+      status.textContent = `${saved.fullName} (${saved.email}) was created successfully.${refreshFailed ? " The full list could not refresh; your new account is shown below. Use Refresh list to retry." : " The user list has been refreshed."}`;
       content.querySelector("#player-search").value = "";
       content.querySelector("#ranking-status").value = "";
       draw();
@@ -536,6 +548,24 @@ async function playersPage(content) {
           }
         }),
     );
+  };
+  content.querySelector("#refresh-users").onclick = async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    try {
+      const fresh = await api("/admin/users");
+      players.splice(0, players.length, ...fresh.players);
+      content.querySelector("#player-search").value = "";
+      content.querySelector("#ranking-status").value = "";
+      draw();
+      const status = content.querySelector("#user-save-status");
+      status.hidden = false;
+      status.textContent = `User list refreshed. ${players.length} accounts loaded.`;
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+    }
   };
   document.querySelector("#player-search").oninput = draw;
   document.querySelector("#ranking-status").onchange = draw;

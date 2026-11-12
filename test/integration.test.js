@@ -1292,6 +1292,51 @@ test("Super Admin user management displays roles and saves role changes through 
     assert.equal(document.querySelectorAll("#new-user-role option").length, 3);
     assert.match(document.querySelector(".topbar").textContent, /SUPER ADMIN/);
     assert.equal(document.querySelector(`[data-role="${admin._id}"]`), null);
+    const form = document.querySelector("#new-user-role").closest("form");
+    for (const role of ["player", "admin", "super-admin"]) {
+      const suffix = role.replaceAll("-", "_");
+      const values = {
+        fullName: `Created ${role}`,
+        username: `ui_created_${suffix}`,
+        email: `ui-${role}@example.test`,
+        phone: "+15551234567",
+        password: "Created-from-form-938",
+        confirmPassword: "Created-from-form-938",
+        provisionalRanking: "3",
+        role,
+      };
+      for (const [key, value] of Object.entries(values))
+        form.elements.namedItem(key).value = value;
+      document.querySelector("#player-search").value = "no matching person";
+      document.querySelector("#ranking-status").value = "confirmed";
+      await form.onsubmit({ preventDefault() {} });
+      assert.equal(form.querySelector('[role="alert"]').textContent, "");
+      const stored = await User.findOne({ email: values.email });
+      assert.ok(stored, `User ${role} must be saved`);
+      assert.equal(stored.role, role);
+      const row = document
+        .querySelector(`[data-role="${stored._id}"]`)
+        ?.closest("tr");
+      assert.ok(row, `Created ${role} must appear immediately`);
+      assert.match(
+        document.querySelector("#user-save-status").textContent,
+        /created successfully/,
+      );
+      assert.equal(document.querySelector("#user-save-status").hidden, false);
+      await document
+        .querySelector("#refresh-users")
+        .onclick({ currentTarget: document.querySelector("#refresh-users") });
+      assert.ok(
+        document.querySelector(`[data-role="${stored._id}"]`),
+        "Account must remain visible after refreshing the list",
+      );
+      assert.match(row.textContent, new RegExp(values.email));
+      const refreshed = await call("get", "/admin/users");
+      assert.ok(
+        refreshed.body.players.some((p) => p._id === String(stored._id)),
+        "Created account must persist in the refreshed list",
+      );
+    }
     await document.querySelector(`[data-role="${players[23]._id}"]`).onclick();
     assert.equal((await User.findById(players[23]._id)).role, "admin");
     assert.match(
