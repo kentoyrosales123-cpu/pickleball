@@ -182,3 +182,13 @@ The repository selects Node 24. An explicit Render `NODE_VERSION` takes preceden
 For the court-and-waiting-list workflow, create an open-play event with **Random queue (new teams every round)** and open its **Live queue** tab as an administrator. Add confirmed participants through **Add player**, then select **Add match** to reserve the next four players and randomize their teams. Choose a free court and select **Call Players**. The blue/orange winner buttons ask for actual game scores; saving updates results and returns all four players to the waiting queue. Fewest games are prioritized, followed by longest waiting time. Pairings can repeat by chance.
 
 Up Next matches persist across refreshes and can be released back to the queue. Live courts cannot be double-booked. This workflow is separate from publishing a fixed schedule: use an event without an existing schedule, and skip team finalization. Existing scheduled events are preserved. The queue currently uses fair rotation, not winner/loser priority groups.
+
+## Account roles
+
+- **Super Admin** creates accounts, assigns Player/Admin/Super Admin roles, activates or deactivates users, manages club settings and rankings, and manages events.
+- **Admin** creates and manages events, rosters, queues, teams, schedules and results. Admins cannot create accounts, change roles, deactivate users, or change global settings. The roster picker exposes player names and skill levels without account emails.
+- **Player** registers for events and views personal results and club information. Public signup always creates a Player.
+
+Sign in as Super Admin and open **User management** to create an account with a chosen role or use **Change role** beside an existing user. Role changes invalidate that user's sessions. You cannot change your own role or deactivate yourself, and at least one active Super Admin is preserved.
+
+On server startup, migration `003-super-admin` promotes the oldest active legacy Admin if no active Super Admin exists. It runs once; newly created Admin accounts are never automatically promoted. The development bootstrap now creates a Super Admin. Restart the server after updating, then refresh or sign in again to see the new navigation. The migration can also be run with `npm.cmd run migrate` against your configured database.

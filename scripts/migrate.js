@@ -1,3 +1,4 @@
+import { migrateSuperAdmin } from "../src/migrations/003-super-admin.js";
 import { migrateStarRanking } from "../src/migrations/002-star-ranking.js";
 import mongoose from "mongoose";
 import { getConfig } from "../src/config.js";
@@ -8,6 +9,7 @@ try {
   await connectDatabase(config.MONGODB_URI);
   console.log(await migrateRatings());
   console.log(await migrateStarRanking());
+  console.log(await migrateSuperAdmin());
 } finally {
   await mongoose.disconnect();
 }

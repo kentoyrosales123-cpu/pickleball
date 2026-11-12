@@ -24,7 +24,7 @@ export async function registerPlayer(eventId, userId, actor, cancel = false) {
       eventId,
       userId,
     }).session(session);
-    const isAdmin = actor.role === "admin";
+    const isAdmin = ["admin", "super-admin"].includes(actor.role);
     const now = new Date();
     if (cancel) {
       const assigned = await Team.find({ eventId, players: userId })

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { z } from "zod";
-import { admin, ensure, validate } from "../middleware/security.js";
+import { admin, superAdmin, ensure, validate } from "../middleware/security.js";
 import {
   User,
   Settings,
@@ -50,7 +50,7 @@ function checkedId(value) {
 }
 async function visible(req) {
   return (
-    req.user.role === "admin" ||
+    ["admin", "super-admin"].includes(req.user.role) ||
     !!(await Settings.findOne({ key: "global" }).lean())?.showRankingMMR
   );
 }
@@ -71,12 +71,12 @@ export function rankingRoutes() {
   const r = Router();
   r.get(
     "/admin/ranking/players/:id/pickle-que-review",
-    admin,
+    superAdmin,
     pickleQueController.get,
   );
   r.post(
     "/admin/ranking/players/:id/pickle-que-review",
-    admin,
+    superAdmin,
     validate(pickleQueReviewSchema),
     pickleQueController.save,
   );
@@ -102,7 +102,9 @@ export function rankingRoutes() {
       ensure(
         await Event.exists({
           _id: q.eventId,
-          ...(req.user.role === "admin" ? {} : { status: { $ne: "draft" } }),
+          ...(["admin", "super-admin"].includes(req.user.role)
+            ? {}
+            : { status: { $ne: "draft" } }),
         }),
         "Event not found",
         404,
@@ -302,7 +304,7 @@ export function rankingRoutes() {
       seasons: await RankingSeason.find().sort({ startDate: -1 }).lean(),
     }),
   );
-  r.get("/admin/ranking/settings", admin, async (req, res) => {
+  r.get("/admin/ranking/settings", superAdmin, async (req, res) => {
     const settings = await Settings.findOne({ key: "global" });
     res.json({
       showMMR: settings?.showRankingMMR || false,
@@ -312,7 +314,7 @@ export function rankingRoutes() {
   });
   r.patch(
     "/admin/ranking/settings",
-    admin,
+    superAdmin,
     validate(z.object({ showMMR: z.boolean(), reason }).strict()),
     async (req, res) => {
       await mongoose.connection.transaction(async (session) => {
@@ -336,7 +338,7 @@ export function rankingRoutes() {
   );
   r.patch(
     "/admin/ranking/players/:id",
-    admin,
+    superAdmin,
     validate(
       z
         .object({ rankStars: z.number().int().min(0).max(1000000), reason })
@@ -375,7 +377,7 @@ export function rankingRoutes() {
   );
   r.post(
     "/admin/ranking/seasons",
-    admin,
+    superAdmin,
     validate(
       z
         .object({

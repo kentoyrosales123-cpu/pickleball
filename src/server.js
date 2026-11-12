@@ -1,3 +1,4 @@
+import { migrateSuperAdmin } from "./migrations/003-super-admin.js";
 import { migrateStarRanking } from "./migrations/002-star-ranking.js";
 import http from "node:http";
 import mongoose from "mongoose";
@@ -12,6 +13,7 @@ const config = getConfig();
 await connectDatabase(config.MONGODB_URI);
 await migrateRatings();
 await migrateStarRanking();
+await migrateSuperAdmin();
 const server = http.createServer(createApp(config));
 const io = new Server(server, {
   cors: { origin: config.ALLOWED_ORIGINS, credentials: true },

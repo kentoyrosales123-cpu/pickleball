@@ -1,3 +1,4 @@
+import { lockRatings } from "../services/ratings.js";
 import mongoose from "mongoose";
 import {
   User,
@@ -110,9 +111,13 @@ export const playerController = {
     }),
   players: async (req, res) =>
     res.json({
-      players: await User.find()
+      players: await User.find(
+        req.user.role === "super-admin" ? {} : { role: "player" },
+      )
         .select(
-          "fullName username email officialRanking provisionalRanking rankingStatus active role createdAt doublesRating doublesRatedMatches automaticRankingStatus rankingOverride",
+          req.user.role === "super-admin"
+            ? "fullName username email officialRanking provisionalRanking rankingStatus active role createdAt doublesRating doublesRatedMatches automaticRankingStatus rankingOverride"
+            : "fullName officialRanking provisionalRanking active role doublesRating",
         )
         .sort({ createdAt: -1 })
         .limit(1000),
@@ -128,14 +133,80 @@ export const playerController = {
       message: "Ranking confirmed with a documented manual override",
     });
   },
+  changeRole: async (req, res) => {
+    ensure(
+      String(req.user._id) !== req.params.id,
+      "You cannot change your own role",
+    );
+    await mongoose.connection.transaction(async (session) => {
+      await lockRatings(session);
+      ensure(
+        await User.exists({
+          _id: req.user._id,
+          role: "super-admin",
+          active: true,
+        }).session(session),
+        "Super Admin access required",
+        403,
+      );
+      const user = await User.findById(req.params.id)
+        .select("+tokenVersion")
+        .session(session);
+      ensure(user, "User not found", 404);
+      const before = user.role;
+      if (before === req.body.role) return;
+      if (before === "super-admin" && user.active)
+        ensure(
+          (await User.countDocuments({
+            role: "super-admin",
+            active: true,
+          }).session(session)) > 1,
+          "Keep at least one active Super Admin",
+          409,
+        );
+      user.role = req.body.role;
+      user.tokenVersion++;
+      await user.save({ session });
+      await audit(
+        req.user._id,
+        "change-role",
+        "User",
+        user._id,
+        { role: before },
+        { role: user.role },
+        session,
+      );
+    });
+    publish();
+    res.json({ message: "Role updated. This user must sign in again." });
+  },
   activate: async (req, res) => {
     ensure(
       String(req.user._id) !== req.params.id,
       "You cannot deactivate yourself",
     );
     await mongoose.connection.transaction(async (session) => {
+      await lockRatings(session);
+      ensure(
+        await User.exists({
+          _id: req.user._id,
+          role: "super-admin",
+          active: true,
+        }).session(session),
+        "Super Admin access required",
+        403,
+      );
       const user = await User.findById(req.params.id).session(session);
-      ensure(user && user.role !== "admin", "Player not found", 404);
+      ensure(user, "User not found", 404);
+      if (user.role === "super-admin" && user.active && !req.body.active)
+        ensure(
+          (await User.countDocuments({
+            role: "super-admin",
+            active: true,
+          }).session(session)) > 1,
+          "Keep at least one active Super Admin",
+          409,
+        );
       const before = user.active;
       user.active = req.body.active;
       user.tokenVersion =

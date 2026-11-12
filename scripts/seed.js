@@ -14,7 +14,7 @@ if (config.NODE_ENV !== "development")
 password.parse(process.env.SEED_PASSWORD);
 await connectDatabase(config.MONGODB_URI);
 try {
-  const admin = await User.findOne({ role: "admin" });
+  const admin = await User.findOne({ role: { $in: ["admin", "super-admin"] } });
   if (!admin) throw new Error("Run create-admin first");
   const names = [
     "Alex Reyes",

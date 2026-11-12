@@ -58,7 +58,7 @@ export async function mountStarRanking(container, user, chart) {
   }
 }
 export async function rankingPage(container, user, chart) {
-  const admin = user.role === "admin",
+  const admin = user.role === "super-admin",
     [seasons, events] = await Promise.all([
       api("/ranking/seasons"),
       api("/events"),

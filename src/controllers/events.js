@@ -162,8 +162,9 @@ async function participants(id, session) {
 }
 export const eventController = {
   list: async (req, res) => {
-    const filter =
-      req.user?.role === "admin" ? {} : { status: { $ne: "draft" } };
+    const filter = ["admin", "super-admin"].includes(req.user?.role)
+      ? {}
+      : { status: { $ne: "draft" } };
     const events = await Event.find(filter)
       .sort({ startDateTime: 1 })
       .limit(200)
@@ -183,7 +184,8 @@ export const eventController = {
   detail: async (req, res) => {
     const event = await getEvent(req.params.id);
     ensure(
-      req.user.role === "admin" || event.status !== "draft",
+      ["admin", "super-admin"].includes(req.user.role) ||
+        event.status !== "draft",
       "Event not found",
       404,
     );
@@ -374,8 +376,9 @@ export const eventController = {
     }),
   teams: async (req, res) => {
     const event = await getEvent(req.params.id);
-    const batch =
-      req.user.role === "admin" ? event.activeBatch : event.finalizedBatch;
+    const batch = ["admin", "super-admin"].includes(req.user.role)
+      ? event.activeBatch
+      : event.finalizedBatch;
     res.json({
       teams: batch
         ? await Team.find({
@@ -655,7 +658,8 @@ export const eventController = {
   matches: async (req, res) => {
     const event = await getEvent(req.params.id);
     ensure(
-      event.status !== "draft" || req.user.role === "admin",
+      event.status !== "draft" ||
+        ["admin", "super-admin"].includes(req.user.role),
       "Event not found",
       404,
     );
@@ -1053,14 +1057,16 @@ export const eventController = {
     );
     const roster = await participants(event._id, null);
     ensure(
-      req.user.role === "admin" ||
+      ["admin", "super-admin"].includes(req.user.role) ||
         roster.some((p) => String(p._id) === String(req.user._id)),
       "Register for the event first",
       403,
     );
     const proposals = await TeamProposal.find({
       eventId: event._id,
-      ...(req.user.role === "admin" ? {} : { requestedBy: req.user._id }),
+      ...(["admin", "super-admin"].includes(req.user.role)
+        ? {}
+        : { requestedBy: req.user._id }),
     })
       .populate("requestedBy partnerId", "fullName")
       .lean();

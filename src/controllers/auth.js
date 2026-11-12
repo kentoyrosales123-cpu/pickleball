@@ -1,3 +1,4 @@
+import { lockRatings } from "../services/ratings.js";
 import { PlayerRanking } from "../models/ranking.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -40,6 +41,9 @@ export const registrationSchema = z
     message: "Passwords do not match",
     path: ["confirmPassword"],
   });
+export const createUserSchema = registrationSchema.safeExtend({
+  role: z.enum(["player", "admin", "super-admin"]).default("player"),
+});
 export const loginSchema = z.object({
   email: z.email().transform((v) => v.toLowerCase()),
   password: z.string().max(100),
@@ -70,9 +74,30 @@ export function authController(config) {
       const { password, confirmPassword, ...data } = req.body;
       const passwordHash = await bcrypt.hash(password, 12);
       const user = await mongoose.connection.transaction(async (session) => {
-        const [created] = await User.create([{ ...data, passwordHash }], {
-          session,
-        });
+        if (adminCreated) {
+          await lockRatings(session);
+          ensure(
+            await User.exists({
+              _id: req.user._id,
+              active: true,
+              role: "super-admin",
+            }).session(session),
+            "Super Admin access required",
+            403,
+          );
+        }
+        const [created] = await User.create(
+          [
+            {
+              ...data,
+              role: adminCreated ? data.role : "player",
+              passwordHash,
+            },
+          ],
+          {
+            session,
+          },
+        );
         await PlayerRanking.create([{ userId: created._id }], { session });
         if (adminCreated)
           await audit(

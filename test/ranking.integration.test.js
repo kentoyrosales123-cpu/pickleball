@@ -62,7 +62,7 @@ before(async () => {
   });
   await connectDatabase(repl.getUri());
   app = createApp(config);
-  admin = await player("admin");
+  admin = await player("super-admin");
   token = cookie(admin);
 });
 after(async () => {
@@ -479,7 +479,7 @@ test("ranked administrator page previews and saves teams through the existing ev
     const { rankingPage } = await import("../public/js/ranking.js");
     await rankingPage(document.querySelector("main"), {
       id: String(admin._id),
-      role: "admin",
+      role: "super-admin",
     });
     assert.ok(document.querySelector("#rank-season-form"));
     const event = document.querySelector("#rank-operation-event");

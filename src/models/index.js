@@ -47,7 +47,11 @@ const user = new Schema(
     email: { type: String, required: true, unique: true, lowercase: true },
     phone: String,
     passwordHash: { type: String, required: true, select: false },
-    role: { type: String, enum: ["player", "admin"], default: "player" },
+    role: {
+      type: String,
+      enum: ["player", "admin", "super-admin"],
+      default: "player",
+    },
     profileImage: String,
     gender: String,
     dateOfBirth: Date,

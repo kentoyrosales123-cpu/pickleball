@@ -52,7 +52,7 @@ before(async () => {
   });
   await connectDatabase(repl.getUri());
   app = createApp(config);
-  admin = await makePlayer(1, "admin");
+  admin = await makePlayer(1, "super-admin");
   adminCookie = cookie(admin);
 });
 after(async () => {

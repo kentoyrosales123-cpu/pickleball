@@ -3,10 +3,11 @@ import { rankingRoutes } from "./ranking.js";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { auth, admin, validate } from "../middleware/security.js";
+import { auth, admin, superAdmin, validate } from "../middleware/security.js";
 import {
   authController,
   registrationSchema,
+  createUserSchema,
   loginSchema,
   password,
 } from "../controllers/auth.js";
@@ -63,7 +64,7 @@ export function api(config) {
   r.use(signedIn);
   r.use(async (req, res, next) => {
     if (
-      req.user.role !== "admin" &&
+      !["admin", "super-admin"].includes(req.user.role) &&
       !(await Settings.findOne({ key: "global" }).lean())?.showRankingMMR
     ) {
       const json = res.json.bind(res);
@@ -237,10 +238,22 @@ export function api(config) {
   r.get("/admin/dashboard", admin, p.dashboard);
   r.get("/admin/reports", admin, p.dashboard);
   r.get("/admin/players", admin, p.players);
-  r.post("/admin/players", admin, validate(registrationSchema), a.createUser);
+  r.get("/admin/users", superAdmin, p.players);
+  r.post(
+    "/admin/players",
+    superAdmin,
+    validate(createUserSchema),
+    a.createUser,
+  );
+  r.put(
+    "/admin/users/:id/role",
+    superAdmin,
+    validate(z.object({ role: z.enum(["player", "admin", "super-admin"]) })),
+    p.changeRole,
+  );
   r.put(
     "/admin/players/:id/ranking",
-    admin,
+    superAdmin,
     validate(
       z.object({
         ranking: z.coerce.number().int().min(1).max(12),
@@ -251,34 +264,34 @@ export function api(config) {
   );
   r.put(
     "/admin/players/:id/active",
-    admin,
+    superAdmin,
     validate(z.object({ active: z.boolean() })),
     p.activate,
   );
-  r.get("/admin/audit-logs", admin, p.audit);
-  r.get("/admin/settings", admin, p.settings);
-  r.get("/admin/ratings/settings", admin, ratings.settings);
+  r.get("/admin/audit-logs", superAdmin, p.audit);
+  r.get("/admin/settings", superAdmin, p.settings);
+  r.get("/admin/ratings/settings", superAdmin, ratings.settings);
   r.put(
     "/admin/ratings/settings",
-    admin,
+    superAdmin,
     validate(ratingSettingsSchema),
     ratings.updateSettings,
   );
   r.post(
     "/admin/ratings/recalculate",
-    admin,
+    superAdmin,
     validate(z.object({ reason: z.string().trim().min(3).max(500) })),
     ratings.recalculate,
   );
   r.put(
     "/admin/players/:id/rating-override",
-    admin,
+    superAdmin,
     validate(overrideSchema),
     ratings.override,
   );
   r.put(
     "/admin/settings",
-    admin,
+    superAdmin,
     validate(
       z.object({
         leaderboardOrder: z.enum(["wins", "winRate", "points", "rating"]),

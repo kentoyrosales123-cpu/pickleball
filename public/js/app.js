@@ -54,19 +54,25 @@ export function eventCard(e) {
   return `<article class="event-card"><div class="event-visual ${e.eventType}"><div class="date-chip"><small>${d.toLocaleDateString(undefined, { month: "short" }).toUpperCase()}</small><strong>${d.getDate()}</strong></div></div><div class="event-body"><span class="badge ${e.eventType === "tournament" ? "blue" : "green"}">${e.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(e.registration || e.status.replaceAll("-", " "))}</span><h3>${esc(e.eventName)}</h3><div class="event-meta">${icon("map-pin")}${esc(e.location)}</div><div class="event-meta">${icon("clock")}${date(e.startDateTime)} · ${time(e.startDateTime)}–${time(e.endDateTime)}</div><div class="event-meta">${icon("bar-chart-3")}Levels ${e.minRanking}–${e.maxRanking}</div><div class="capacity-track"><span style="width:${Math.min(100, (e.confirmedCount / e.capacity) * 100)}%"></span></div><div class="d-flex justify-content-between subtle"><span>${e.confirmedCount} / ${e.capacity} players</span><span>${Math.max(0, e.capacity - e.confirmedCount)} spots left</span></div><div class="event-bottom"><small>${e.fee ? `₱${e.fee.toLocaleString()}` : "Free to play"}<br>Closes ${date(e.registrationDeadline)}</small><a class="btn btn-secondary btn-sm" href="${user ? `#/events/${e._id}` : "#/login"}">View event ${icon("arrow-up-right")}</a></div></div></article>`;
 }
 function shell(route) {
-  const admin = user.role === "admin";
+  const admin = ["admin", "super-admin"].includes(user.role);
   const items = admin
     ? [
         ["dashboard", "layout-dashboard", "Dashboard"],
-        ["players", "users", "Player management"],
+        ...(user.role === "super-admin"
+          ? [["players", "users", "User management"]]
+          : []),
         ["open-play", "calendar-days", "Open play"],
         ["tournaments", "trophy", "Tournaments"],
         ["teams", "shuffle", "Team generator"],
         ["matches", "swords", "Match management"],
         ["ranking", "star", "Ranked clubhouse"],
         ["leaderboard", "medal", "Rankings"],
-        ["reports", "chart-no-axes-combined", "Statistics & reports"],
-        ["settings", "settings-2", "Settings"],
+        ...(user.role === "super-admin"
+          ? [["reports", "chart-no-axes-combined", "Statistics & reports"]]
+          : []),
+        ...(user.role === "super-admin"
+          ? [["settings", "settings-2", "Settings"]]
+          : []),
       ]
     : [
         ["dashboard", "layout-dashboard", "Overview"],
@@ -78,7 +84,7 @@ function shell(route) {
         ["statistics", "chart-no-axes-combined", "My statistics"],
         ["profile", "user-round", "My profile"],
       ];
-  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions"><span class="badge green">${admin ? "ADMINISTRATOR" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
+  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions"><span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
   document.querySelector("#logout").onclick = async () => {
     await api("/auth/logout", "POST", {});
     user = null;
@@ -231,7 +237,7 @@ function chart(id, type, labels, datasets, options = {}) {
   );
 }
 async function dashboard(content) {
-  const admin = user.role === "admin";
+  const admin = ["admin", "super-admin"].includes(user.role);
   const data = await api(admin ? "/admin/dashboard" : "/players/me/stats");
   const { events } = await api("/events");
   const upcoming = events.filter(
@@ -302,7 +308,7 @@ async function dashboard(content) {
 }
 async function eventsPage(content, route) {
   const { events } = await api("/events");
-  const admin = user.role === "admin";
+  const admin = ["admin", "super-admin"].includes(user.role);
   const titles = {
     events: "Find your next game",
     "open-play": "Open play management",
@@ -411,7 +417,7 @@ async function leaderboard(content) {
   await draw();
 }
 async function playersPage(content) {
-  const { players } = await api("/admin/players");
+  const { players } = await api("/admin/users");
   content.innerHTML =
     heading(
       "The people behind every rally.",
@@ -420,7 +426,7 @@ async function playersPage(content) {
     `<div class="filters"><input class="form-control" id="player-search" placeholder="Search players" aria-label="Search players"><select class="form-select" id="ranking-status" aria-label="Ranking status"><option value="">All rankings</option><option value="provisional">Provisional</option><option value="confirmed">Confirmed</option></select></div><div class="panel" id="players-table"></div>`;
   const createPanel = document.createElement("details");
   createPanel.className = "panel mb-4";
-  createPanel.innerHTML = `<summary class="fw-bold">Create user</summary><p class="subtle mt-3">Create a player account. Share the sign-in details securely with the player.</p><form><div class="form-grid">${field("Full name", "fullName", "", "text", 'required minlength="2" maxlength="100"')}${field("Username", "username", "", "text", 'required pattern="[a-zA-Z0-9_]{3,30}" autocomplete="off"')}${field("Email address", "email", "", "email", "required")}${field("Mobile number", "phone", "", "tel", 'required minlength="7" maxlength="30"')}<div><label for="provisionalRanking" class="form-label">Initial skill level</label><select name="provisionalRanking" id="provisionalRanking" class="form-select">${rankings.map((r, i) => `<option value="${i + 1}">${i + 1} - ${esc(r)}</option>`).join("")}</select></div>${field("Password", "password", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}</div><div role="alert"></div><div class="form-actions"><button class="btn btn-primary" type="submit">Create user</button><button class="btn btn-secondary" type="button">Cancel</button></div></form>`;
+  createPanel.innerHTML = `<summary class="fw-bold">Create user</summary><p class="subtle mt-3">Create an account and choose its access level. Share sign-in details securely.</p><form><div class="form-grid"><div><label class="form-label" for="new-user-role">Role</label><select class="form-select" id="new-user-role" name="role"><option value="player">Player</option><option value="admin">Admin - events</option><option value="super-admin">Super Admin - full management</option></select></div>${field("Full name", "fullName", "", "text", 'required minlength="2" maxlength="100"')}${field("Username", "username", "", "text", 'required pattern="[a-zA-Z0-9_]{3,30}" autocomplete="off"')}${field("Email address", "email", "", "email", "required")}${field("Mobile number", "phone", "", "tel", 'required minlength="7" maxlength="30"')}<div><label for="provisionalRanking" class="form-label">Initial skill level</label><select name="provisionalRanking" id="provisionalRanking" class="form-select">${rankings.map((r, i) => `<option value="${i + 1}">${i + 1} - ${esc(r)}</option>`).join("")}</select></div>${field("Password", "password", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="72" autocomplete="new-password"')}</div><div role="alert"></div><div class="form-actions"><button class="btn btn-primary" type="submit">Create user</button><button class="btn btn-secondary" type="button">Cancel</button></div></form>`;
   content.querySelector(".filters").before(createPanel);
   const createForm = createPanel.querySelector("form");
   const createError = createPanel.querySelector("[role=alert]");
@@ -466,7 +472,41 @@ async function playersPage(content) {
         (!status || p.rankingStatus === status),
     );
     document.querySelector("#players-table").innerHTML =
-      `<div class="table-wrap"><table><thead><tr><th>Player</th><th>Email</th><th>Skill level</th><th>Doubles Elo</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map((p) => `<tr><td><span class="player-name">${avatar(p)}${esc(p.fullName)}</span></td><td>${esc(p.email)}</td><td>${badge(p)}</td><td>${(p.doublesRating ?? 100 + ((p.officialRanking || p.provisionalRanking) - 1) * 200).toFixed(1)}${p.rankingOverride ? " ? manual" : ""}</td><td>${p.active ? "Active" : "Inactive"}</td><td><div class="inline-actions"><button class="btn btn-secondary btn-sm" data-rank="${p._id}">Manage rating</button>${p.role !== "admin" ? `<button class="btn btn-secondary btn-sm" data-pickle-que="${p._id}">Pickle Que rank review</button><button class="btn btn-secondary btn-sm" data-active="${p._id}">${p.active ? "Deactivate" : "Activate"}</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>`;
+      `<div class="table-wrap"><table><thead><tr><th>Player</th><th>Email</th><th>Role</th><th>Skill level</th><th>Doubles Elo</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows.map((p) => `<tr><td><span class="player-name">${avatar(p)}${esc(p.fullName)}</span></td><td>${esc(p.email)}</td><td>${esc(p.role === "super-admin" ? "Super Admin" : p.role === "admin" ? "Admin" : "Player")}</td><td>${badge(p)}</td><td>${(p.doublesRating ?? 100 + ((p.officialRanking || p.provisionalRanking) - 1) * 200).toFixed(1)}${p.rankingOverride ? " ? manual" : ""}</td><td>${p.active ? "Active" : "Inactive"}</td><td><div class="inline-actions">${p._id !== user.id ? `<button class="btn btn-secondary btn-sm" data-role="${p._id}">Change role</button><button class="btn btn-secondary btn-sm" data-active="${p._id}">${p.active ? "Deactivate" : "Activate"}</button>` : ""}<button class="btn btn-secondary btn-sm" data-rank="${p._id}">Manage rating</button>${p.role === "player" ? `<button class="btn btn-secondary btn-sm" data-pickle-que="${p._id}">Pickle Que rank review</button>` : ""}</div></td></tr>`).join("")}</tbody></table></div>`;
+    content.querySelectorAll("[data-role]").forEach(
+      (b) =>
+        (b.onclick = async () => {
+          const target = players.find((p) => p._id === b.dataset.role);
+          const result = await Swal.fire({
+            title: "Change user role",
+            text: target.fullName,
+            input: "select",
+            inputOptions: {
+              player: "Player",
+              admin: "Admin - create and manage events",
+              "super-admin": "Super Admin - users, roles and events",
+            },
+            inputValue: target.role,
+            showCancelButton: true,
+            confirmButtonText: "Save role",
+            showLoaderOnConfirm: true,
+            preConfirm: async (role) => {
+              try {
+                await api(`/admin/users/${target._id}/role`, "PUT", { role });
+                return role;
+              } catch (error) {
+                Swal.showValidationMessage(error.message);
+                return false;
+              }
+            },
+          });
+          if (result.isConfirmed) {
+            target.role = result.value;
+            draw();
+            toast("Role updated. User must sign in again.");
+          }
+        }),
+    );
     content.querySelectorAll("[data-rank]").forEach(
       (b) =>
         (b.onclick = async () => {
@@ -686,11 +726,11 @@ async function render() {
       else if (active === "history") await historyPage(content);
       else if (active === "ranking") await rankingPage(content, user, chart);
       else if (active === "leaderboard") await leaderboard(content);
-      else if (active === "players" && user.role === "admin")
+      else if (active === "players" && user.role === "super-admin")
         await playersPage(content);
       else if (["statistics", "reports"].includes(active))
-        await statistics(content, user.role === "admin");
-      else if (active === "settings" && user.role === "admin")
+        await statistics(content, ["admin", "super-admin"].includes(user.role));
+      else if (active === "settings" && user.role === "super-admin")
         await settings(content);
       else if (active === "notifications") await notifications(content);
       else await dashboard(content);

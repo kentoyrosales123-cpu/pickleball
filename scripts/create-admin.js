@@ -15,14 +15,14 @@ if (
   throw new Error("ADMIN_PASSWORD must contain 8–72 UTF-8 bytes");
 await connectDatabase(config.MONGODB_URI);
 try {
-  if (await User.exists({ role: "admin" }))
+  if (await User.exists({ role: { $in: ["admin", "super-admin"] } }))
     throw new Error("An administrator already exists");
   await User.create({
     fullName: "Club Administrator",
     username: "administrator",
     email: process.env.ADMIN_EMAIL.toLowerCase(),
     passwordHash: await bcrypt.hash(process.env.ADMIN_PASSWORD, 12),
-    role: "admin",
+    role: "super-admin",
     provisionalRanking: 1,
     emailVerified: true,
   });

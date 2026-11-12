@@ -45,7 +45,15 @@ export const auth = (config) => async (req, res, next) => {
   next();
 };
 export const admin = (req, res, next) => {
-  ensure(req.user.role === "admin", "Administrator access required", 403);
+  ensure(
+    ["admin", "super-admin"].includes(req.user.role),
+    "Administrator access required",
+    403,
+  );
+  next();
+};
+export const superAdmin = (req, res, next) => {
+  ensure(req.user.role === "super-admin", "Super Admin access required", 403);
   next();
 };
 export const publicUser = (u) => ({

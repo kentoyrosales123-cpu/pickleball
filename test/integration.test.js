@@ -46,7 +46,7 @@ before(async () => {
     username: "admin",
     email: "admin@example.test",
     passwordHash: hash,
-    role: "admin",
+    role: "super-admin",
     provisionalRanking: 1,
   });
   players = await User.insertMany(
@@ -154,7 +154,7 @@ test("authentication, ownership, CSRF, role checks and single-use reset tokens",
       password: "Strong-new-password-1",
       confirmPassword: "Strong-new-password-1",
       provisionalRanking: 3,
-      role: "admin",
+      role: "super-admin",
     },
     "",
   );
@@ -165,7 +165,11 @@ test("authentication, ownership, CSRF, role checks and single-use reset tokens",
       await call(
         "put",
         "/players/me",
-        { fullName: "Updated Player", officialRanking: 12, role: "admin" },
+        {
+          fullName: "Updated Player",
+          officialRanking: 12,
+          role: "super-admin",
+        },
         playerCookie,
       )
     ).status,
@@ -595,7 +599,11 @@ test("event interface drives real registration, draft, publication and schedule 
   try {
     const { eventDetail } = await import("../public/js/events.js");
     const state = {
-      user: { id: String(admin._id), role: "admin", provisionalRanking: 1 },
+      user: {
+        id: String(admin._id),
+        role: "super-admin",
+        provisionalRanking: 1,
+      },
       rankings: Array.from({ length: 12 }, (_, i) => `Level ${i + 1}`),
       render: async () => {},
     };
@@ -788,7 +796,7 @@ test("a reset-final result can be corrected without deleting its own match", asy
   );
 });
 
-test("admins create player accounts without replacing their session", async () => {
+test("super admins create player accounts without replacing their session", async () => {
   const data = {
     fullName: "Admin Created",
     username: "admin_created",
@@ -797,7 +805,7 @@ test("admins create player accounts without replacing their session", async () =
     password: "Created-player-password-938",
     confirmPassword: "Created-player-password-938",
     provisionalRanking: 3,
-    role: "admin",
+    role: "player",
   };
   assert.equal((await call("post", "/admin/players", data, "")).status, 401);
   assert.equal(
@@ -1014,4 +1022,286 @@ test("admins can delete populated closed events and rankings are rebuilt atomica
   assert.ok(await Event.exists({ _id: other._id }));
   assert.ok(await AuditLog.exists({ action: "delete", entityId: event._id }));
   assert.equal((await call("delete", `/events/${event._id}`)).status, 404);
+});
+
+test("Super Admin controls roles while event admins cannot manage accounts", async () => {
+  const data = {
+    fullName: "Event Organizer",
+    username: "event_organizer",
+    email: "organizer@example.test",
+    phone: "+15551234567",
+    password: "Organizer-password-938",
+    confirmPassword: "Organizer-password-938",
+    provisionalRanking: 3,
+    role: "admin",
+  };
+  const created = await call("post", "/admin/players", data);
+  assert.equal(created.status, 201);
+  assert.equal(created.body.user.role, "admin");
+  const organizerId = created.body.user.id;
+  const organizerCookie = cookie({ _id: organizerId });
+  for (const [method, path, body] of [
+    ["post", "/admin/players", data],
+    ["get", "/admin/users"],
+    ["put", `/admin/users/${players[0]._id}/role`, { role: "super-admin" }],
+    ["put", `/admin/players/${players[0]._id}/active`, { active: false }],
+    ["get", "/admin/settings"],
+    ["patch", "/admin/ranking/settings", {}],
+  ])
+    assert.equal(
+      (await call(method, path, body, organizerCookie)).status,
+      403,
+      path,
+    );
+  const roster = await call(
+    "get",
+    "/admin/players",
+    undefined,
+    organizerCookie,
+  );
+  assert.equal(roster.status, 200);
+  assert.ok(
+    roster.body.players.every(
+      (p) => p.role === "player" && p.email === undefined,
+    ),
+  );
+  const template = await createEvent({ format: "random" });
+  const event = await call(
+    "post",
+    "/events",
+    { ...template, eventName: "Organizer Event" },
+    organizerCookie,
+  );
+  assert.equal(event.status, 201, JSON.stringify(event.body));
+  for (const player of players.slice(0, 4))
+    assert.equal(
+      (
+        await call(
+          "post",
+          `/events/${event.body.event._id}/participants`,
+          { userId: String(player._id) },
+          organizerCookie,
+        )
+      ).status,
+      200,
+    );
+  assert.equal(
+    (
+      await call(
+        "post",
+        `/events/${event.body.event._id}/queue/prepare`,
+        {},
+        organizerCookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await call("put", `/admin/users/${admin._id}/role`, { role: "player" }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (await call("put", `/admin/players/${admin._id}/active`, { active: false }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (await call("put", `/admin/users/${organizerId}/role`, { role: "owner" }))
+      .status,
+    400,
+  );
+  assert.equal(
+    (
+      await call("put", `/admin/users/${organizerId}/role`, {
+        role: "super-admin",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await call("get", "/auth/me", undefined, organizerCookie)).status,
+    401,
+  );
+  let login = await call(
+    "post",
+    "/auth/login",
+    { email: data.email, password: data.password },
+    "",
+  );
+  const promotedCookie = login.headers["set-cookie"][0].split(";")[0];
+  assert.equal(
+    (await call("get", "/admin/users", undefined, promotedCookie)).status,
+    200,
+  );
+  assert.equal(
+    (await call("put", `/admin/users/${organizerId}/role`, { role: "player" }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await call("get", "/admin/users", undefined, promotedCookie)).status,
+    401,
+  );
+  login = await call(
+    "post",
+    "/auth/login",
+    { email: data.email, password: data.password },
+    "",
+  );
+  const demotedCookie = login.headers["set-cookie"][0].split(";")[0];
+  assert.equal(
+    (await call("post", "/events", template, demotedCookie)).status,
+    403,
+  );
+  const { AuditLog } = await import("../src/models/index.js");
+  assert.equal(
+    await AuditLog.countDocuments({
+      entityId: organizerId,
+      action: "change-role",
+    }),
+    2,
+  );
+});
+
+test("Super Admin migration promotes the oldest active legacy admin only once", async () => {
+  const { Migration } = await import("../src/models/index.js");
+  const { migrateSuperAdmin } =
+    await import("../src/migrations/003-super-admin.js");
+  await User.updateOne({ _id: admin._id }, { role: "admin" });
+  const second = await User.create({
+    fullName: "Second Admin",
+    username: "second_admin",
+    email: "second-admin@example.test",
+    passwordHash: "unused",
+    role: "admin",
+    provisionalRanking: 1,
+  });
+  try {
+    const result = await migrateSuperAdmin();
+    assert.equal(result.promoted, String(admin._id));
+    assert.equal((await User.findById(second._id)).role, "admin");
+    assert.equal((await migrateSuperAdmin()).alreadyApplied, true);
+    assert.equal((await User.findById(second._id)).role, "admin");
+  } finally {
+    await User.updateOne({ _id: admin._id }, { role: "super-admin" });
+    await User.deleteOne({ _id: second._id });
+    await Migration.deleteOne({ key: "003-super-admin" });
+  }
+});
+
+test("concurrent cross-demotions retain one active Super Admin", async () => {
+  const first = await User.create({
+    fullName: "First Owner",
+    username: "first_owner",
+    email: "first-owner@example.test",
+    passwordHash: "unused",
+    role: "super-admin",
+    provisionalRanking: 1,
+  });
+  const second = await User.create({
+    fullName: "Second Owner",
+    username: "second_owner",
+    email: "second-owner@example.test",
+    passwordHash: "unused",
+    role: "super-admin",
+    provisionalRanking: 1,
+  });
+  // Temporarily isolate the two owners to exercise the last-owner invariant.
+  await User.updateOne({ _id: admin._id }, { role: "admin" });
+  try {
+    const results = await Promise.all([
+      call(
+        "put",
+        `/admin/users/${second._id}/role`,
+        { role: "admin" },
+        cookie(first),
+      ),
+      call(
+        "put",
+        `/admin/users/${first._id}/role`,
+        { role: "admin" },
+        cookie(second),
+      ),
+    ]);
+    assert.equal(results.filter((r) => r.status === 200).length, 1);
+    assert.ok(results.some((r) => [401, 403, 409].includes(r.status)));
+    assert.equal(
+      await User.countDocuments({ role: "super-admin", active: true }),
+      1,
+    );
+  } finally {
+    await User.updateOne({ _id: admin._id }, { role: "super-admin" });
+    await User.deleteMany({ _id: { $in: [first._id, second._id] } });
+  }
+});
+
+test("Super Admin user management displays roles and saves role changes through the API", async () => {
+  const dom = new JSDOM('<div id="app"></div><div id="announcer"></div>', {
+    url: "http://localhost:3000/#/players",
+  });
+  const keys = [
+    "document",
+    "window",
+    "location",
+    "history",
+    "sessionStorage",
+    "FormData",
+    "fetch",
+    "Chart",
+    "Swal",
+    "lucide",
+  ];
+  const original = Object.fromEntries(keys.map((k) => [k, globalThis[k]]));
+  Object.assign(globalThis, {
+    document: dom.window.document,
+    window: dom.window,
+    location: dom.window.location,
+    history: dom.window.history,
+    sessionStorage: dom.window.sessionStorage,
+    FormData: dom.window.FormData,
+    Chart: class {
+      destroy() {}
+    },
+    lucide: { createIcons() {} },
+    Swal: {
+      isVisible: () => false,
+      showValidationMessage(message) {
+        throw new Error(message);
+      },
+      fire: async (options) =>
+        options.input === "select"
+          ? { isConfirmed: true, value: await options.preConfirm("admin") }
+          : { isConfirmed: false },
+    },
+  });
+  globalThis.fetch = async (url, options = {}) => {
+    const response = await call(
+      (options.method || "GET").toLowerCase(),
+      url.replace(/^\/api/, ""),
+      options.body ? JSON.parse(options.body) : undefined,
+    );
+    return {
+      ok: response.status < 400,
+      status: response.status,
+      json: async () => response.body,
+    };
+  };
+  try {
+    await import("../public/js/app.js?super-admin-management-test");
+    assert.equal(document.querySelectorAll("#new-user-role option").length, 3);
+    assert.match(document.querySelector(".topbar").textContent, /SUPER ADMIN/);
+    assert.equal(document.querySelector(`[data-role="${admin._id}"]`), null);
+    await document.querySelector(`[data-role="${players[23]._id}"]`).onclick();
+    assert.equal((await User.findById(players[23]._id)).role, "admin");
+    assert.match(
+      document.querySelector(`[data-role="${players[23]._id}"]`).closest("tr")
+        .textContent,
+      /Admin/,
+    );
+  } finally {
+    await User.updateOne({ _id: players[23]._id }, { role: "player" });
+    Object.assign(globalThis, original);
+    dom.window.close();
+  }
 });

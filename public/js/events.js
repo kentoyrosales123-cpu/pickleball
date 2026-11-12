@@ -33,7 +33,7 @@ const localDate = (value) => {
     .slice(0, 16);
 };
 export async function eventForm(content, state, id) {
-  if (state.user.role !== "admin")
+  if (!["admin", "super-admin"].includes(state.user.role))
     throw new Error("Administrator access required");
   const now = Date.now();
   const event = id
@@ -162,7 +162,7 @@ export async function eventDetail(content, state, id) {
   const { event } = await api(`/events/${id}`),
     { events } = await api("/events");
   const registration = events.find((e) => e._id === id)?.registration;
-  const admin = state.user.role === "admin";
+  const admin = ["admin", "super-admin"].includes(state.user.role);
   content.innerHTML = `<div class="page-heading"><div><a href="#/events" class="subtle">← All events</a><div class="mt-3 mb-2"><span class="badge green">${event.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(event.status.replaceAll("-", " "))}</span></div><h1>${esc(event.eventName)}</h1><p>${esc(event.location)} · ${date(event.startDateTime)} · ${time(event.startDateTime)}–${time(event.endDateTime)}</p></div>${admin ? `<a class="btn btn-secondary" href="#/events/${id}/edit">${icon("sliders-horizontal")} Edit event</a>` : ""}</div><div class="event-tabs"><button data-tab="overview" class="active">Overview</button>${admin ? '<button data-tab="participants">Participants</button>' : ""}${admin && event.eventType === "open-play" && event.format === "random" ? '<button data-tab="queue">Live queue</button>' : ""}<button data-tab="teams">Teams</button><button data-tab="rankings">Rankings</button><button data-tab="matches">Matches${event.eventType === "tournament" ? " & bracket" : ""}</button></div><div id="event-content"></div>`;
   const container = document.querySelector("#event-content");
   async function overview() {
