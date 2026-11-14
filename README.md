@@ -47,7 +47,7 @@ Verification and reset tokens expire after one hour, are stored as SHA-256 diges
 
 ## Club workflow
 
-1. Players register with an initial provisional level, then sign in to their dashboard. Profile supports optional gender/date of birth and a hosted HTTPS image URL. Administrators confirm skill levels with a reason; every confirmation creates ranking history and an audit entry. Automatic doubles ranking can be enabled by an administrator; see the rating-engine guide below.
+1. Players register with an initial provisional level, then sign in to their dashboard. Profile supports optional gender/date of birth and direct profile-picture uploads. Administrators confirm skill levels with a reason; every confirmation creates ranking history and an audit entry. Automatic doubles ranking can be enabled by an administrator; see the rating-engine guide below.
 2. Administrators create an event with dates, ranking limits, capacity, courts, format, and scoring rules. Use `registration-open` to accept registrations during its configured registration window. Draft events remain hidden from players. Registration closes according to the deadline even if the displayed status has not been manually changed.
 3. Players register or join the waiting list. Administrators can also add/remove participants. Cancellation before the deadline promotes the earliest waiting player automatically. Capacity, duplicate checks, promotion, and draft invalidation share a transaction and serialize on the event document.
 4. In an event's **Teams** tab, generate random, ranking-balanced, or similar-rank teams. Administrators can manually assign or swap players with dropdowns. Save draft adjustments before finalizing. Odd players remain visible as substitutes; explicit confirmation is required to finalize with unassigned players. For player-selected teams, confirmed participants submit preferred partners and administrators approve them into a draft.
@@ -179,7 +179,15 @@ The repository selects Node 24. An explicit Render `NODE_VERSION` takes preceden
 
 ## Live random queue
 
-For the court-and-waiting-list workflow, create an open-play event with **Random queue (new teams every round)** and open its **Live queue** tab as an administrator. Add confirmed participants through **Add player**, then select **Add match** to reserve the next four players and randomize their teams. Choose a free court and select **Call Players**. The blue/orange winner buttons ask for actual game scores; saving updates results and returns all four players to the waiting queue. Fewest games are prioritized, followed by longest waiting time. Pairings can repeat by chance.
+Players can open **My Live Session** from their account menu to see their confirmed random open-play events, including completed sessions. Each active session shows personal status, queue position, elapsed waiting time, games played, partner, opponents, and assigned court. Players can check in, take a break, return, or leave using controls limited to their own registration. Matchmaking, courts, and results remain organizer-controlled. The view updates on club changes and checks again every ten seconds; waiting counters update every second. Being called to court displays an alert and creates a personal notification. Draft or cancelled events and fixed schedules are excluded.
+
+**Session results** lists completed matches newest first, with scores from the player's team's perspective, win/loss, partners, opponents, stars earned or lost, and ranking-point changes when the club's rating visibility setting permits. The session summary shows games, wins, and losses; corrections update the history and totals. Players can **Report incorrect score** with an explanation. Only match participants can report, once per player per result revision. Reports are saved and notify active organizers with the event, match, recorded scores, and reason. Organizers review and correct results through the event's Matches tab; reporting does not alter scores or rankings.
+
+For the court-and-waiting-list workflow, create an open-play event with **Random queue (new teams every round)** and open its **Live queue** tab as an administrator. Add confirmed participants through **Add player**, then use **Check in** when each player arrives. Registration alone does not put a player in the live queue, including existing registrations created before check-in was introduced.
+
+Select **Add match** to reserve the next four ready players. Longest waiting time comes first, then fewest games played. Teams favor fresh partners, then fewer repeated opponents, with random ties and extra weight on recent matchups. Some repeats are unavoidable. Choose a free court and select **Call Players**. The blue/orange winner buttons ask for actual game scores; saving updates results and returns checked-in players to the waiting queue with a fresh wait.
+
+Use **Take a break** to pause a waiting player, **Ready again** to return them with a fresh waiting timer, or **Leave session** when they finish for the day. These controls preserve registration, games played, and matchup history. Waiting starts at check-in or return, rather than registration. Return an Up Next match to the queue or finish a live match before changing an assigned player's availability. Closed events cannot change availability.
 
 Up Next matches persist across refreshes and can be released back to the queue. Live courts cannot be double-booked. This workflow is separate from publishing a fixed schedule: use an event without an existing schedule, and skip team finalization. Existing scheduled events are preserved. The queue currently uses fair rotation, not winner/loser priority groups.
 
@@ -198,3 +206,21 @@ On server startup, migration `003-super-admin` promotes the oldest active legacy
 Live queue matches now award stars and ranking points automatically, including games queued before this update when their result is saved. New event forms enable rankings by default. Event standings count wins/losses from all finalized games, while star and rating-point changes count ranked games. Administrators can see rating-point changes alongside event stars.
 
 For games already completed while unranked, open the event's **Rankings** tab and select **Apply rankings to all event games**. This includes all existing results, enables future ranking, and replays rankings chronologically without duplicating rewards. Score corrections replay the same history. Wins normally earn one star; losses normally deduct one, with a zero-star floor and the existing protection/bonus rules. Ranking points increase on wins and decrease on losses according to team strength.
+
+## Event reminders and court-call emails
+
+Players can opt into **Event reminders** and **Court-call alerts** under **My profile → Email alerts**, then save their profile. Email delivery requires a verified email address and the existing SMTP configuration. Both email preferences default to off; in-app notifications remain available.
+
+The running server checks every ten seconds. Confirmed participants receive an in-app reminder about 24 hours and 1 hour before a published/open/ongoing event, with optional email. Each reminder window lasts ten minutes; downtime beyond that window skips that reminder rather than sending an outdated one. A unique database key prevents duplicate reminder creation, including concurrent workers. Rescheduling creates new reminder windows.
+
+Calling players in the live queue saves an email delivery record in the same transaction as the court assignment. Emails expire after five minutes and are suppressed if the match is no longer active. Delivery also rechecks account status, verification, preferences, confirmed registration, event status, and reminder start time. Temporary mail failures are retried up to three attempts with at least a minute between attempts. Delivery claims survive restarts; SMTP acceptance followed by a process crash can still cause a duplicate email on retry.
+
+Court-call email can arrive while the app is closed, but mail providers may delay delivery. Keep **My Live Session** open during play for immediate in-app court status. These alerts use email, not SMS or web push. The server must remain running for scheduled reminders. Live SMTP delivery still needs verification in the deployed environment.
+
+## Profile picture uploads
+
+Open **My profile**, choose a JPEG, PNG, or WebP file, and select **Upload photo**. A successful upload refreshes the profile and account avatar immediately. Upload another image to replace it, or select **Remove photo** to return to initials. Profile text changes are saved separately.
+
+Images are limited to 5 MB and 25 megapixels. The server decodes the image, rejects unsupported or animated formats, applies orientation, crops it to a square of at most 512 pixels, and re-encodes it as JPEG without original metadata. Images are stored in the MongoDB `profilephotos` collection, one per account, and survive application redeployments. Include this collection in database backups. No external storage account or additional environment variables are required.
+
+`PUT /api/players/me/photo` accepts raw image bytes with an image Content-Type and the usual authenticated cookie and X-PMS-Request header. `DELETE /api/players/me/photo` removes the current photo. `GET /api/players/:id/photo` serves images to signed-in club members. A player can change only their own image. Existing hosted image URLs remain supported by the profile API.

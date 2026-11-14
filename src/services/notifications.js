@@ -3,7 +3,14 @@ let io;
 export const setSocket = (socket) => {
   io = socket;
 };
-export async function notify(users, title, message, type = "event", session) {
+export async function notify(
+  users,
+  title,
+  message,
+  type = "event",
+  session,
+  alert = {},
+) {
   if (!users.length) return [];
   return Notification.insertMany(
     [...new Set(users.map(String))].map((userId) => ({
@@ -11,6 +18,7 @@ export async function notify(users, title, message, type = "event", session) {
       title,
       message,
       type,
+      ...alert,
     })),
     { session },
   );

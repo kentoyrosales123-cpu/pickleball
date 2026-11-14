@@ -9,6 +9,7 @@ import { createApp } from "./app.js";
 import { identify } from "./middleware/security.js";
 import { setSocket } from "./services/notifications.js";
 import { migrateRatings } from "./migrations/001-doubles-ratings.js";
+import { startAlerts } from "./services/alerts.js";
 const config = getConfig();
 await connectDatabase(config.MONGODB_URI);
 await migrateRatings();
@@ -48,10 +49,12 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => clearInterval(timer));
 });
 setSocket(io);
+const stopAlerts = startAlerts(config);
 server.listen(config.PORT, () =>
   console.log(`CourtSide running at ${config.APP_URL}`),
 );
 async function shutdown() {
+  await stopAlerts();
   io.close();
   server.close();
   await mongoose.disconnect();

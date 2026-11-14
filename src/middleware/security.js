@@ -70,6 +70,8 @@ export const publicUser = (u) => ({
   officialRanking: u.officialRanking,
   rankingStatus: u.rankingStatus,
   emailVerified: u.emailVerified,
+  emailEventReminders: u.emailEventReminders || false,
+  emailCourtCalls: u.emailCourtCalls || false,
   doublesRating: numericalRating(u),
   doublesRatedMatches: u.doublesRatedMatches || 0,
   automaticRanking:

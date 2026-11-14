@@ -1,4 +1,6 @@
 import { reviewPickleQue } from "./pickle-que.js";
+import { mountLiveSession } from "./live-session.js";
+import { photoForm, mountPhotoUpload } from "./profile-photo.js";
 import { mountStarRanking, rankingPage } from "./ranking.js";
 import {
   api,
@@ -78,6 +80,7 @@ function shell(route) {
         ["dashboard", "layout-dashboard", "Overview"],
         ["events", "calendar-days", "Explore events"],
         ["my-events", "ticket", "My events"],
+        ["live-session", "activity", "My Live Session"],
         ["history", "swords", "Match history"],
         ["ranking", "star", "Ranked clubhouse"],
         ["leaderboard", "medal", "Leaderboard"],
@@ -359,10 +362,17 @@ async function profile(content) {
   const { history } = await api("/players/me/rankings");
   content.innerHTML =
     heading("Make yourself at home.", "Keep your player profile up to date.") +
-    `<div class="profile-grid"><div class="panel"><div class="panel-header"><div class="player-name">${avatar(user)}<h3>${esc(user.fullName)}</h3></div>${badge(user)}</div><form id="profile-form"><div class="form-grid">${field("Full name", "fullName", user.fullName, "text", "required")}${field("Mobile number", "phone", user.phone, "tel")}${field("Gender (optional)", "gender", user.gender)}${field("Date of birth (optional)", "dateOfBirth", user.dateOfBirth?.slice(0, 10), "date")}${field("Profile image HTTPS URL", "profileImage", user.profileImage, "url")}<div><label class="form-label">Email address</label><div class="form-control bg-light">${esc(user.email)}</div></div></div><div class="form-actions"><button class="btn btn-primary">Save profile</button></div></form></div><div><div class="panel mb-4"><h3>Your skill level</h3><div class="my-3">${badge(user)}</div><p class="subtle">Rated results can confirm your automatic skill category when the club enables automatic ranking. Manual administrator overrides remain in effect until released.</p>${history.map((h) => `<p class="subtle">${date(h.changedAt)} · ${rankings[h.newRanking - 1]}<br>${esc(h.reason)}</p>`).join("")}</div><div class="panel"><h3>Email verification</h3><p>${user.emailVerified ? "Your email is verified." : "Verify your email using the link in your inbox."}</p>${!user.emailVerified ? '<button class="btn btn-secondary" id="resend">Send verification link</button>' : '<span class="badge green">VERIFIED</span>'}</div></div></div>`;
+    `<div class="profile-grid"><div class="panel"><div class="panel-header"><div class="player-name">${avatar(user)}<h3>${esc(user.fullName)}</h3></div>${badge(user)}</div>${photoForm(user)}<form id="profile-form"><div class="form-grid">${field("Full name", "fullName", user.fullName, "text", "required")}${field("Mobile number", "phone", user.phone, "tel")}${field("Gender (optional)", "gender", user.gender)}${field("Date of birth (optional)", "dateOfBirth", user.dateOfBirth?.slice(0, 10), "date")}<div><label class="form-label">Email address</label><div class="form-control bg-light">${esc(user.email)}</div></div></div><fieldset class="mt-4"><legend>Email alerts</legend><p class="subtle">Optional alerts sent to your verified email. Event reminders arrive about 24 hours and 1 hour before play. Court-call emails may be delayed by your mail provider; keep My Live Session open during play.</p><label class="d-block"><input type="checkbox" name="emailEventReminders" ${user.emailEventReminders ? "checked" : ""}> Event reminders</label><label class="d-block"><input type="checkbox" name="emailCourtCalls" ${user.emailCourtCalls ? "checked" : ""}> Court-call alerts</label></fieldset><div class="form-actions"><button class="btn btn-primary">Save profile</button></div></form></div><div><div class="panel mb-4"><h3>Your skill level</h3><div class="my-3">${badge(user)}</div><p class="subtle">Rated results can confirm your automatic skill category when the club enables automatic ranking. Manual administrator overrides remain in effect until released.</p>${history.map((h) => `<p class="subtle">${date(h.changedAt)} · ${rankings[h.newRanking - 1]}<br>${esc(h.reason)}</p>`).join("")}</div><div class="panel"><h3>Email verification</h3><p>${user.emailVerified ? "Your email is verified." : "Verify your email using the link in your inbox."}</p>${!user.emailVerified ? '<button class="btn btn-secondary" id="resend">Send verification link</button>' : '<span class="badge green">VERIFIED</span>'}</div></div></div>`;
+  mountPhotoUpload(content, (updated) => {
+    user = updated;
+    toast("Profile photo updated");
+    render();
+  });
   document.querySelector("#profile-form").onsubmit = async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target));
+    data.emailEventReminders = e.target.elements.emailEventReminders.checked;
+    data.emailCourtCalls = e.target.elements.emailCourtCalls.checked;
     if (!data.dateOfBirth) delete data.dateOfBirth;
     const result = await api("/players/me", "PUT", data);
     user = result.user;
@@ -719,6 +729,8 @@ let rendering = false;
 async function render() {
   if (rendering) return;
   rendering = true;
+  state.cleanupLiveSession?.();
+  state.cleanupLiveSession = null;
   charts.forEach((c) => c.destroy());
   charts = [];
   try {
@@ -753,6 +765,8 @@ async function render() {
       )
         await eventsPage(content, active);
       else if (active === "profile") await profile(content);
+      else if (active === "live-session")
+        state.cleanupLiveSession = await mountLiveSession(content, state);
       else if (active === "history") await historyPage(content);
       else if (active === "ranking") await rankingPage(content, user, chart);
       else if (active === "leaderboard") await leaderboard(content);
@@ -822,6 +836,7 @@ function connectSocket() {
   socket.on("refresh", () => {
     refreshNotifications(true);
     state.refreshEvent?.();
+    state.refreshLiveSession?.();
     document.querySelector("#announcer").textContent =
       "Club information has been updated.";
     if (

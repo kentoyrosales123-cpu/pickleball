@@ -1,6 +1,11 @@
 import { queueController as queue } from "../controllers/queue.js";
 import { rankingRoutes } from "./ranking.js";
-import { Router } from "express";
+import { Router, raw } from "express";
+import {
+  uploadPhoto,
+  removePhoto,
+  getPhoto,
+} from "../controllers/profile-photo.js";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { auth, admin, superAdmin, validate } from "../middleware/security.js";
@@ -86,10 +91,27 @@ export function api(config) {
   r.post("/auth/logout", a.logout);
   r.post("/auth/resend-verification", authLimit, a.resend);
   r.get("/players/me", a.me);
+  const photoLimit = rateLimit({
+    windowMs: 60_000,
+    limit: config.NODE_ENV === "test" ? 1000 : 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { message: "Too many photo uploads. Please wait a minute." },
+  });
+  r.put(
+    "/players/me/photo",
+    photoLimit,
+    raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "5mb" }),
+    uploadPhoto,
+  );
+  r.delete("/players/me/photo", removePhoto);
+  r.get("/players/:id/photo", getPhoto);
   r.put(
     "/players/me",
     validate(
       z.object({
+        emailEventReminders: z.boolean().optional(),
+        emailCourtCalls: z.boolean().optional(),
         fullName: z.string().trim().min(2).max(100),
         phone: z.string().max(30).optional(),
         gender: z.string().max(30).optional(),
@@ -102,6 +124,22 @@ export function api(config) {
     p.profile,
   );
   r.get("/players/me/stats", p.stats);
+  r.get("/players/me/live-sessions", queue.mine);
+  r.post(
+    "/events/:id/queue/matches/:matchId/report-score",
+    validate(
+      z.object({
+        reason: z.string().trim().min(5).max(1000),
+        revision: z.number().int().nonnegative(),
+      }),
+    ),
+    queue.reportScore,
+  );
+  r.put(
+    "/events/:id/queue/me/status",
+    validate(z.object({ status: z.enum(["ready", "break", "left"]) })),
+    queue.setOwnStatus,
+  );
   r.get("/players/me/matches", p.history);
   r.get("/players/me/rankings", p.rankingHistory);
   r.get("/players/me/rating", ratings.me);
@@ -126,6 +164,12 @@ export function api(config) {
   r.delete("/events/:id/participants/:userId", admin, e.removeParticipant);
   r.get("/events/:id/queue", admin, queue.get);
   r.post("/events/:id/queue/prepare", admin, queue.prepare);
+  r.put(
+    "/events/:id/queue/players/:userId/status",
+    admin,
+    validate(z.object({ status: z.enum(["ready", "break", "left"]) })),
+    queue.setStatus,
+  );
   r.post(
     "/events/:id/queue/:matchId/start",
     admin,

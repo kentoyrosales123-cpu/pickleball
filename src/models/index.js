@@ -71,6 +71,8 @@ const user = new Schema(
       default: "provisional",
     },
     rankingOverride: { type: Boolean, default: false },
+    emailEventReminders: { type: Boolean, default: false },
+    emailCourtCalls: { type: Boolean, default: false },
     emailVerified: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
     tokenVersion: { type: Number, default: 0, select: false },
@@ -163,6 +165,12 @@ const registration = new Schema(
       required: true,
     },
     registeredAt: { type: Date, default: Date.now },
+    queueStatus: {
+      type: String,
+      enum: ["not-checked-in", "ready", "break", "left"],
+      default: "not-checked-in",
+    },
+    queueReadyAt: { type: Date, default: null },
     waitlistPosition: Number,
   },
   options,
@@ -219,6 +227,14 @@ const match = new Schema(
     rankingApplied: { type: Boolean, default: false },
     rankingVersion: { type: Number, default: 0 },
     finalizedBy: ref("User", false),
+    scoreReports: [
+      {
+        playerId: ref("User"),
+        revision: { type: Number, required: true },
+        reason: { type: String, required: true, maxlength: 1000 },
+        reportedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   options,
 );
@@ -258,10 +274,23 @@ const notification = new Schema(
     message: String,
     type: String,
     isRead: { type: Boolean, default: false },
+    deliveryKey: String,
+    eventId: ref("Event", false),
+    matchId: ref("Match", false),
+    eventStart: Date,
+    expiresAt: Date,
+    emailState: {
+      type: String,
+      enum: ["pending", "sending", "sent", "skipped"],
+    },
+    emailAttemptAt: Date,
+    emailAttempts: { type: Number, default: 0 },
   },
   options,
 );
 notification.index({ userId: 1, createdAt: -1 });
+notification.index({ deliveryKey: 1 }, { unique: true, sparse: true });
+notification.index({ emailState: 1, emailAttemptAt: 1 });
 const audit = new Schema(
   {
     actorId: ref("User"),
@@ -390,6 +419,16 @@ ratingHistory.index({
 const migration = new Schema(
   { key: { type: String, unique: true }, appliedAt: Date },
   options,
+);
+export const ProfilePhoto = mongoose.model(
+  "ProfilePhoto",
+  new Schema(
+    {
+      _id: ref("User"),
+      data: { type: Buffer, required: true },
+    },
+    options,
+  ),
 );
 export const User = mongoose.model("User", user);
 export const Event = mongoose.model("Event", event);

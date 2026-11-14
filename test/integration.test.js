@@ -860,6 +860,336 @@ test("super admins create player accounts without replacing their session", asyn
   assert.equal(login.status, 200);
 });
 
+test("players view their live sessions and control only their own availability", async () => {
+  const event = await createEvent({ format: "random" });
+  const base = `/events/${event._id}/queue`;
+  const own = (status, extra = {}) =>
+    call("put", `${base}/me/status`, { status, ...extra }, playerCookie);
+  const mine = async () => {
+    const response = await call(
+      "get",
+      "/players/me/live-sessions",
+      undefined,
+      playerCookie,
+    );
+    assert.equal(response.status, 200);
+    return response.body.sessions.find((s) => s.event._id === event._id);
+  };
+  assert.equal(await mine(), undefined);
+  assert.equal((await own("ready")).status, 404);
+  for (const p of players.slice(0, 4))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  assert.equal((await mine()).status, "not-checked-in");
+  assert.equal(
+    (await own("ready", { userId: String(players[1]._id) })).status,
+    200,
+  );
+  assert.equal(
+    (
+      await EventRegistration.findOne({
+        eventId: event._id,
+        userId: players[1]._id,
+      })
+    ).queueStatus,
+    "not-checked-in",
+  );
+  let session = await mine();
+  assert.equal(session.status, "waiting");
+  assert.equal(session.queuePosition, 1);
+  assert.ok(session.waitingSince);
+  assert.equal(session.games, 0);
+  assert.equal(
+    (
+      await call(
+        "put",
+        `${base}/players/${players[1]._id}/status`,
+        { status: "ready" },
+        playerCookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await call("post", `${base}/prepare`, {}, playerCookie)).status,
+    403,
+  );
+  assert.equal((await own("break")).status, 200);
+  assert.equal((await mine()).status, "break");
+  assert.equal((await mine()).waitingSince, null);
+  await own("ready");
+  for (const p of players.slice(1, 4))
+    await call("put", `${base}/players/${p._id}/status`, { status: "ready" });
+  await call("post", `${base}/prepare`, {});
+  session = await mine();
+  assert.equal(session.status, "up-next");
+  assert.equal(session.queuePosition, null);
+  assert.equal(session.match.court, null);
+  assert.equal(session.match.opponents.length, 2);
+  assert.equal(
+    new Set([
+      session.match.partner._id,
+      ...session.match.opponents.map((p) => p._id),
+      String(players[0]._id),
+    ]).size,
+    4,
+  );
+  assert.deepEqual(Object.keys(session.match.partner).sort(), [
+    "_id",
+    "fullName",
+  ]);
+  assert.equal((await own("left")).status, 409);
+  assert.equal(
+    (
+      await call(
+        "post",
+        `${base}/${session.match._id}/start`,
+        { court: "1" },
+        playerCookie,
+      )
+    ).status,
+    403,
+  );
+  await call("post", `${base}/${session.match._id}/start`, { court: "1" });
+  assert.equal((await mine()).status, "playing");
+  assert.equal((await mine()).match.court, "1");
+  const notifications = (
+    await call("get", "/notifications", undefined, playerCookie)
+  ).body.notifications;
+  assert.ok(
+    notifications.some(
+      (n) =>
+        n.title === "You are called to Court 1" &&
+        n.message.includes(event.eventName),
+    ),
+  );
+  await call("post", `/matches/${session.match._id}/results`, {
+    scores: [{ a: 11, b: 5 }],
+    revision: 0,
+  });
+  assert.equal((await mine()).games, 1);
+  assert.equal((await mine()).status, "waiting");
+  const finished = await Match.findById(session.match._id).populate("teamA");
+  const isA = finished.teamA.players.some(
+    (p) => String(p) === String(players[0]._id),
+  );
+  let result = (await mine()).history[0];
+  assert.deepEqual(result.scores, [
+    { own: isA ? 11 : 5, opponent: isA ? 5 : 11 },
+  ]);
+  assert.equal(result.won, isA);
+  assert.equal((await mine()).wins, Number(isA));
+  assert.equal((await mine()).losses, Number(!isA));
+  const { Settings } = await import("../src/models/index.js");
+  const { RankingHistory } = await import("../src/models/ranking.js");
+  assert.equal(result.ratingChange, null);
+  assert.equal(result.ratingHidden, true);
+  await Settings.findOneAndUpdate(
+    { key: "global" },
+    { $set: { showRankingMMR: true } },
+    { upsert: true },
+  );
+  result = (await mine()).history[0];
+  assert.equal(
+    result.ratingChange,
+    (
+      await RankingHistory.findOne({
+        matchId: finished._id,
+        playerId: players[0]._id,
+      })
+    ).mmrChanged,
+  );
+  assert.equal(
+    result.starsChange,
+    (
+      await RankingHistory.findOne({
+        matchId: finished._id,
+        playerId: players[0]._id,
+      })
+    ).starsChanged,
+  );
+  const reportUrl = `${base}/matches/${finished._id}/report-score`;
+  const reportBody = {
+    reason: "The score should be 5 to 11 for Team A and Team B",
+    revision: finished.revision,
+  };
+  assert.equal(
+    (await call("post", reportUrl, reportBody, cookie(players[5]))).status,
+    403,
+  );
+  assert.equal(
+    (await call("post", reportUrl, { ...reportBody, reason: "" }, playerCookie))
+      .status,
+    400,
+  );
+  assert.equal(
+    (
+      await call(
+        "post",
+        reportUrl,
+        { ...reportBody, revision: 0 },
+        playerCookie,
+      )
+    ).status,
+    409,
+  );
+  const reports = await Promise.all([
+    call("post", reportUrl, reportBody, playerCookie),
+    call("post", reportUrl, reportBody, playerCookie),
+  ]);
+  assert.deepEqual(reports.map((r) => r.status).sort(), [200, 409]);
+  assert.equal((await mine()).history[0].reported, true);
+  assert.deepEqual((await mine()).history[0].scores, result.scores);
+  const { Notification } = await import("../src/models/index.js");
+  assert.equal(
+    await Notification.countDocuments({
+      userId: admin._id,
+      type: "score-report",
+      message: { $regex: reportBody.reason },
+    }),
+    1,
+  );
+  assert.equal(
+    (
+      await call(
+        "post",
+        `/matches/${finished._id}/results`,
+        { scores: [{ a: 5, b: 11 }], revision: finished.revision },
+        playerCookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await call("post", `/matches/${finished._id}/results`, {
+        scores: [{ a: 5, b: 11 }],
+        revision: finished.revision,
+      })
+    ).status,
+    200,
+  );
+  result = (await mine()).history[0];
+  assert.equal(result.won, !isA);
+  assert.equal(result.reported, false);
+  assert.equal((await mine()).wins, Number(!isA));
+  assert.equal(
+    result.ratingChange,
+    (
+      await RankingHistory.findOne({
+        matchId: finished._id,
+        playerId: players[0]._id,
+      })
+    ).mmrChanged,
+  );
+  await own("left");
+  assert.equal((await mine()).status, "left");
+  await Event.updateOne({ _id: event._id }, { status: "completed" });
+  assert.equal(await mine(), undefined);
+  assert.equal((await own("ready")).status, 400);
+  const archived = (
+    await call(
+      "get",
+      "/players/me/live-sessions?includeCompleted=true",
+      undefined,
+      playerCookie,
+    )
+  ).body.sessions.find((s) => s.event._id === event._id);
+  assert.equal(archived.status, "completed");
+  assert.equal(archived.history.length, 1);
+  assert.equal(archived.waitingSince, null);
+  await Settings.updateOne(
+    { key: "global" },
+    { $set: { showRankingMMR: false } },
+  );
+});
+
+test("live queue check-in, breaks and leaving preserve registration and reset waiting time", async () => {
+  const event = await createEvent({ format: "random", capacity: 4 });
+  const base = `/events/${event._id}/queue`;
+  const status = (p, value, auth = adminCookie) =>
+    call("put", `${base}/players/${p._id}/status`, { status: value }, auth);
+  for (const p of players.slice(0, 5))
+    await call("post", `/events/${event._id}/participants`, {
+      userId: String(p._id),
+    });
+  let data = (await call("get", base)).body;
+  assert.equal(data.waiting.length, 0);
+  assert.equal(data.unavailable.length, 4);
+  assert.ok(data.unavailable.every((p) => p.queueStatus === "not-checked-in"));
+  assert.equal((await call("post", `${base}/prepare`, {})).status, 409);
+  assert.equal((await status(players[0], "ready", playerCookie)).status, 403);
+  assert.equal((await status(players[4], "ready")).status, 404);
+  assert.equal((await status(players[0], "break")).status, 409);
+  assert.equal((await status(players[0], "invalid")).status, 400);
+  const registeredAt = new Date(Date.now() - 86400_000);
+  await EventRegistration.updateMany(
+    { eventId: event._id },
+    { $set: { registeredAt } },
+  );
+  for (const p of players.slice(0, 4))
+    assert.equal((await status(p, "ready")).status, 200);
+  data = (await call("get", base)).body;
+  const firstWait = data.waiting.find(
+    (p) => p._id === String(players[0]._id),
+  ).waitingSince;
+  assert.ok(+new Date(firstWait) > +registeredAt);
+  assert.equal((await status(players[0], "ready")).status, 200);
+  assert.equal(
+    (await call("get", base)).body.waiting.find(
+      (p) => p._id === String(players[0]._id),
+    ).waitingSince,
+    firstWait,
+  );
+  assert.equal((await status(players[0], "break")).status, 200);
+  assert.equal((await call("get", base)).body.waiting.length, 3);
+  assert.equal((await call("post", `${base}/prepare`, {})).status, 409);
+  assert.equal((await status(players[0], "ready")).status, 200);
+  data = (await call("get", base)).body;
+  assert.ok(
+    +new Date(
+      data.waiting.find((p) => p._id === String(players[0]._id)).waitingSince,
+    ) > +new Date(firstWait),
+  );
+  assert.equal((await call("post", `${base}/prepare`, {})).status, 200);
+  const next = (await call("get", base)).body.next[0];
+  assert.equal((await status(players[0], "break")).status, 409);
+  await call("post", `${base}/${next._id}/start`, { court: "1" });
+  assert.equal((await status(players[0], "left")).status, 409);
+  assert.equal(
+    (
+      await call("post", `/matches/${next._id}/results`, {
+        scores: [{ a: 11, b: 5 }],
+        revision: 0,
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await status(players[0], "break")).status, 200);
+  assert.equal((await status(players[0], "left")).status, 200);
+  data = (await call("get", base)).body;
+  assert.equal(data.unavailable[0].queueStatus, "left");
+  assert.equal(data.unavailable[0].games, 1);
+  assert.equal(
+    (
+      await EventRegistration.findOne({
+        eventId: event._id,
+        userId: players[0]._id,
+      })
+    ).registrationStatus,
+    "confirmed",
+  );
+  assert.equal((await Event.findById(event._id)).confirmedCount, 4);
+  assert.equal((await status(players[0], "ready")).status, 200);
+  data = (await call("get", base)).body;
+  assert.equal(data.waiting.at(-1)._id, String(players[0]._id));
+  assert.equal(data.waiting.at(-1).games, 1);
+  assert.notEqual(data.waiting.at(-1).lastResult, "N");
+  await Event.updateOne({ _id: event._id }, { $set: { status: "completed" } });
+  assert.equal((await status(players[0], "left")).status, 400);
+});
+
 test("live queue reserves players, serializes courts, records results and returns players fairly", async () => {
   const event = await createEvent({ format: "random", courts: ["1", "2"] });
   const base = `/events/${event._id}/queue`;
@@ -868,6 +1198,16 @@ test("live queue reserves players, serializes courts, records results and return
       userId: String(p._id),
     });
   assert.equal((await call("get", base, undefined, playerCookie)).status, 403);
+  assert.equal((await call("get", base)).body.waiting.length, 0);
+  for (const p of players.slice(0, 9))
+    assert.equal(
+      (
+        await call("put", `${base}/players/${p._id}/status`, {
+          status: "ready",
+        })
+      ).status,
+      200,
+    );
   const prepared = await Promise.all([
     call("post", `${base}/prepare`, {}),
     call("post", `${base}/prepare`, {}),
@@ -928,6 +1268,39 @@ test("live queue reserves players, serializes courts, records results and return
   );
   assert.equal((await call("get", base)).body.completed, 1);
 
+  const finished = await Match.findById(live._id);
+  const returnedIds = [...live.teamA.players, ...live.teamB.players].map(
+    (p) => p._id,
+  );
+  data = (await call("get", base)).body;
+  for (const p of data.waiting.filter((p) => returnedIds.includes(p._id))) {
+    assert.equal(p.games, 1);
+    assert.equal(p.waitingSince, finished.completedAt.toISOString());
+  }
+  // Equal waits favor players who have played fewer games.
+  await EventRegistration.updateMany(
+    { eventId: event._id, userId: { $nin: returnedIds } },
+    { $set: { queueReadyAt: finished.completedAt } },
+  );
+  data = (await call("get", base)).body;
+  assert.deepEqual(
+    data.waiting.map((p) => p.games),
+    [0, 0, 0, 0, 0, 1, 1, 1, 1],
+  );
+  // A longer wait takes priority even when the player has played more games.
+  await EventRegistration.updateMany(
+    { eventId: event._id, userId: { $nin: returnedIds } },
+    { $set: { queueReadyAt: new Date(+finished.completedAt + 1000) } },
+  );
+  data = (await call("get", base)).body;
+  assert.deepEqual(
+    data.waiting
+      .slice(0, 4)
+      .map((p) => p._id)
+      .sort(),
+    [...returnedIds].sort(),
+  );
+
   const dom = new JSDOM('<main id="queue"></main>', {
     url: "http://localhost:3000/",
   });
@@ -958,10 +1331,36 @@ test("live queue reserves players, serializes courts, records results and return
       2,
     );
     assert.equal(document.querySelectorAll(".queue-waiting li").length, 9);
+    assert.match(
+      document.querySelector(".queue-waiting li small").textContent,
+      /Waiting \d+(?:h \d+)?m \d{2}s/,
+    );
     await document
       .querySelector("#queue-prepare")
       .onclick({ currentTarget: document.querySelector("#queue-prepare") });
     assert.equal(document.querySelectorAll(".queue-upnext").length, 1);
+    const selected = (await call("get", base)).body.next[0];
+    const oldPartners = [live.teamA, live.teamB].map((team) =>
+      team.players
+        .map((p) => p._id)
+        .sort()
+        .join(":"),
+    );
+    for (const team of [selected.teamA, selected.teamB])
+      assert.ok(
+        !oldPartners.includes(
+          team.players
+            .map((p) => p._id)
+            .sort()
+            .join(":"),
+        ),
+      );
+    assert.deepEqual(
+      [...selected.teamA.players, ...selected.teamB.players]
+        .map((p) => p._id)
+        .sort(),
+      [...returnedIds].sort(),
+    );
     await document.querySelector("[data-start]").onclick();
     assert.equal(document.querySelectorAll(".queue-live").length, 1);
     assert.equal(document.querySelectorAll("[data-win]").length, 2);
@@ -1073,7 +1472,7 @@ test("Super Admin controls roles while event admins cannot manage accounts", asy
     organizerCookie,
   );
   assert.equal(event.status, 201, JSON.stringify(event.body));
-  for (const player of players.slice(0, 4))
+  for (const player of players.slice(0, 4)) {
     assert.equal(
       (
         await call(
@@ -1085,6 +1484,18 @@ test("Super Admin controls roles while event admins cannot manage accounts", asy
       ).status,
       200,
     );
+    assert.equal(
+      (
+        await call(
+          "put",
+          `/events/${event.body.event._id}/queue/players/${player._id}/status`,
+          { status: "ready" },
+          organizerCookie,
+        )
+      ).status,
+      200,
+    );
+  }
   assert.equal(
     (
       await call(
@@ -1426,6 +1837,15 @@ test("live queue results automatically award ranking stars and points in an init
       userId: String(p._id),
     });
   const base = `/events/${event._id}/queue`;
+  for (const p of players.slice(4, 8))
+    assert.equal(
+      (
+        await call("put", `${base}/players/${p._id}/status`, {
+          status: "ready",
+        })
+      ).status,
+      200,
+    );
   assert.equal((await call("post", `${base}/prepare`, {})).status, 200);
   const m = (await call("get", base)).body.next[0];
   assert.equal(m.rated, true);
