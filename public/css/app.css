@@ -341,6 +341,10 @@ p {
   display: flex;
   flex-direction: column;
   z-index: 20;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #293242 transparent;
 }
 .sidebar .brand {
   padding: 0 12px;
@@ -404,6 +408,30 @@ p {
 }
 .shell {
   margin-left: 238px;
+}
+/* Short screens (e.g. 1366×768 laptops): keep every menu item and Sign out visible. */
+@media (max-height: 900px) {
+  .sidebar {
+    padding: 20px 14px;
+  }
+  .sidebar .brand {
+    margin-bottom: 18px;
+  }
+  .nav-label {
+    margin: 8px 0 8px;
+  }
+  .sidebar nav {
+    gap: 2px;
+  }
+  .sidebar nav a {
+    padding: 9px 15px;
+  }
+  .sidebar-bottom {
+    padding-top: 12px;
+  }
+  .sidebar-bottom .club-note {
+    display: none;
+  }
 }
 .topbar {
   height: 78px;

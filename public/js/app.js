@@ -98,8 +98,22 @@ function shell(route) {
     location.hash = "#/";
     render();
   };
-  document.querySelector("#menu").onclick = () =>
-    document.querySelector(".sidebar").classList.toggle("open");
+  const sidebar = document.querySelector(".sidebar");
+  const menu = document.querySelector("#menu");
+  menu.setAttribute("aria-expanded", "false");
+  menu.onclick = () =>
+    menu.setAttribute(
+      "aria-expanded",
+      String(sidebar.classList.toggle("open")),
+    );
+  // Tapping a link (even the current page) closes the mobile menu.
+  sidebar.querySelectorAll("a").forEach(
+    (a) =>
+      (a.onclick = () => {
+        sidebar.classList.remove("open");
+        menu.setAttribute("aria-expanded", "false");
+      }),
+  );
 }
 async function landing() {
   const { events } = await api("/public/events");
