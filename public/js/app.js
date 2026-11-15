@@ -17,6 +17,7 @@ import {
 } from "./api.js";
 import { eventDetail, eventForm } from "./events.js";
 import { supportPage } from "./support.js";
+import { themeToggle, mountThemeToggles, cssVar } from "./theme.js";
 import {
   mountPlayerRating,
   mountRatingSettings,
@@ -90,7 +91,7 @@ function shell(route) {
         ["profile", "user-round", "My profile"],
         ["support", "life-buoy", "Help & support"],
       ];
-  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions"><span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
+  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions">${themeToggle()}<span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
   document.querySelector("#logout").onclick = async () => {
     await api("/auth/logout", "POST", {});
     user = null;
@@ -117,7 +118,7 @@ function shell(route) {
 }
 async function landing() {
   const { events } = await api("/public/events");
-  app.innerHTML = `<div class="landing"><nav class="landing-nav">${brand}<div class="nav-links"><a href="#features">The club experience</a><a class="btn btn-secondary" href="#/login">Log in</a><a class="btn btn-primary" href="#/register">Join the club ${icon("arrow-up-right")}</a></div></nav><section class="hero"><div><span class="eyebrow">YOUR COURT. YOUR COMMUNITY.</span><h1>More play.<br>Better matches.<br><span>Your people.</span></h1><p>Find your next game, team up with your club, and make every rally count. Your pickleball life, all in one place.</p><div class="hero-actions"><a class="btn btn-primary" href="#/register">Find your next game ${icon("arrow-right")}</a><a class="btn btn-secondary" href="#/login">Member sign in</a></div><span class="subtle">Open play · Balanced teams · Club tournaments</span></div><div class="court-art" role="img" aria-label="Illustration of a pickleball court and green ball"><div class="court"><div class="net"></div></div><div class="ball">••<br>•••</div><div class="floating-note">${icon("users")} <strong>Good games. Great company.</strong><div class="subtle">There’s a place for every skill level.</div></div></div></section><section class="landing-section"><div class="section-top"><div class="d-flex flex-column gap-2"><span class="eyebrow">GET IN THE GAME</span><h2>Next up on court</h2></div><a class="btn btn-secondary" href="#/login">Explore events ${icon("arrow-right")}</a></div><div class="events-grid">${
+  app.innerHTML = `<div class="landing"><nav class="landing-nav">${brand}<div class="nav-links">${themeToggle()}<a href="#features">The club experience</a><a class="btn btn-secondary" href="#/login">Log in</a><a class="btn btn-primary" href="#/register">Join the club ${icon("arrow-up-right")}</a></div></nav><section class="hero"><div><span class="eyebrow">YOUR COURT. YOUR COMMUNITY.</span><h1>More play.<br>Better matches.<br><span>Your people.</span></h1><p>Find your next game, team up with your club, and make every rally count. Your pickleball life, all in one place.</p><div class="hero-actions"><a class="btn btn-primary" href="#/register">Find your next game ${icon("arrow-right")}</a><a class="btn btn-secondary" href="#/login">Member sign in</a></div><span class="subtle">Open play · Balanced teams · Club tournaments</span></div><div class="court-art" role="img" aria-label="Illustration of a pickleball court and green ball"><div class="court"><div class="net"></div></div><div class="ball">••<br>•••</div><div class="floating-note">${icon("users")} <strong>Good games. Great company.</strong><div class="subtle">There’s a place for every skill level.</div></div></div></section><section class="landing-section"><div class="section-top"><div class="d-flex flex-column gap-2"><span class="eyebrow">GET IN THE GAME</span><h2>Next up on court</h2></div><a class="btn btn-secondary" href="#/login">Explore events ${icon("arrow-right")}</a></div><div class="events-grid">${
     events
       .filter(
         (e) =>
@@ -182,7 +183,7 @@ function authPage(mode) {
   const register = mode === "register",
     forgot = mode === "forgot",
     reset = mode === "reset";
-  app.innerHTML = `<div class="auth-wrap"><aside class="auth-aside">${brand}<div><span class="eyebrow">WELCOME TO YOUR CLUBHOUSE</span><h1 class="mt-4">Every great game<br>starts with<br><span style="color:var(--green)">good company.</span></h1><p class="mt-4">Your events. Your teammates. Your progress.<br>One place to bring it all together.</p></div><small class="muted">CourtSide · Made for every level of play.</small></aside><main class="auth-form"><a href="#/" class="subtle">← Back to CourtSide</a><h2 class="mt-4">${register ? "Join the club." : forgot ? "Forgot your password?" : reset ? "A fresh start." : "Welcome back."}</h2><p>${register ? "Your next great match is waiting." : forgot ? "We’ll send you a link to reset it." : reset ? "Choose a new password of at least 12 characters." : "Sign in and get back in the game."}</p><form id="auth-form"><div class="form-grid">${register ? field("Full name", "fullName", "", "text", 'required autocomplete="name"') + field("Username", "username", "", "text", 'required pattern="[a-zA-Z0-9_]{3,30}" autocomplete="username"') : ""}${!reset ? `<div class="wide">${field("Email address", "email", "", "email", 'required autocomplete="email"')}</div>` : ""}${register ? field("Mobile number", "phone", "", "tel", 'required autocomplete="tel"') + `<div><label for="provisionalRanking" class="form-label">Initial skill level</label><select name="provisionalRanking" id="provisionalRanking" class="form-select">${rankings.map((r, i) => `<option value="${i + 1}">${i + 1} · ${r}</option>`).join("")}</select></div>` : ""}${!forgot ? `<div class="${register ? "" : "wide"}">${field("Password", "password", "", "password", `required minlength="${register || reset ? 12 : 1}" maxlength="72" autocomplete="${register || reset ? "new-password" : "current-password"}"`)}</div>` : ""}${register ? field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" autocomplete="new-password"') : ""}</div><div id="auth-error" role="alert"></div><button class="btn btn-primary" type="submit">${register ? "Create my account" : forgot ? "Send reset link" : reset ? "Update password" : "Sign in"} ${icon("arrow-right")}</button></form>${!register && !forgot && !reset ? '<div class="auth-switch"><a href="#/forgot">Forgot password?</a></div>' : ""}<div class="auth-switch">${register ? 'Already a member? <a href="#/login">Sign in</a>' : 'New to the club? <a href="#/register">Create an account</a>'}</div>${register ? '<p class="subtle mt-3">Your chosen skill level is provisional until a club administrator confirms it. You can add your photo and optional details in your profile.</p>' : ""}</main></div>`;
+  app.innerHTML = `<div class="auth-wrap"><aside class="auth-aside">${brand}<div><span class="eyebrow">WELCOME TO YOUR CLUBHOUSE</span><h1 class="mt-4">Every great game<br>starts with<br><span style="color:var(--green)">good company.</span></h1><p class="mt-4">Your events. Your teammates. Your progress.<br>One place to bring it all together.</p></div><small class="muted">CourtSide · Made for every level of play.</small></aside><main class="auth-form"><div class="auth-theme">${themeToggle()}</div><a href="#/" class="subtle">← Back to CourtSide</a><h2 class="mt-4">${register ? "Join the club." : forgot ? "Forgot your password?" : reset ? "A fresh start." : "Welcome back."}</h2><p>${register ? "Your next great match is waiting." : forgot ? "We’ll send you a link to reset it." : reset ? "Choose a new password of at least 12 characters." : "Sign in and get back in the game."}</p><form id="auth-form"><div class="form-grid">${register ? field("Full name", "fullName", "", "text", 'required autocomplete="name"') + field("Username", "username", "", "text", 'required pattern="[a-zA-Z0-9_]{3,30}" autocomplete="username"') : ""}${!reset ? `<div class="wide">${field("Email address", "email", "", "email", 'required autocomplete="email"')}</div>` : ""}${register ? field("Mobile number", "phone", "", "tel", 'required autocomplete="tel"') + `<div><label for="provisionalRanking" class="form-label">Initial skill level</label><select name="provisionalRanking" id="provisionalRanking" class="form-select">${rankings.map((r, i) => `<option value="${i + 1}">${i + 1} · ${r}</option>`).join("")}</select></div>` : ""}${!forgot ? `<div class="${register ? "" : "wide"}">${field("Password", "password", "", "password", `required minlength="${register || reset ? 12 : 1}" maxlength="72" autocomplete="${register || reset ? "new-password" : "current-password"}"`)}</div>` : ""}${register ? field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" autocomplete="new-password"') : ""}</div><div id="auth-error" role="alert"></div><button class="btn btn-primary" type="submit">${register ? "Create my account" : forgot ? "Send reset link" : reset ? "Update password" : "Sign in"} ${icon("arrow-right")}</button></form>${!register && !forgot && !reset ? '<div class="auth-switch"><a href="#/forgot">Forgot password?</a></div>' : ""}<div class="auth-switch">${register ? 'Already a member? <a href="#/login">Sign in</a>' : 'New to the club? <a href="#/register">Create an account</a>'}</div>${register ? '<p class="subtle mt-3">Your chosen skill level is provisional until a club administrator confirms it. You can add your photo and optional details in your profile.</p>' : ""}</main></div>`;
   document.querySelector("#auth-form").onsubmit = async (event) => {
     event.preventDefault();
     const button = event.submitter;
@@ -225,6 +226,21 @@ function chart(id, type, labels, datasets, options = {}) {
   });
   const canvas = document.getElementById(id);
   if (!canvas) return;
+  // Map fixed light-theme colors to the active theme's chart palette.
+  const swap = {
+    "#101828": cssVar("--chart-ink"),
+    "#e8eddb": cssVar("--chart-track"),
+    "#e7ebf0": cssVar("--chart-track"),
+  };
+  const themed = (c) => (Array.isArray(c) ? c.map(themed) : swap[c] || c);
+  datasets = datasets.map((d) => ({
+    ...d,
+    ...(d.backgroundColor && { backgroundColor: themed(d.backgroundColor) }),
+  }));
+  if (Chart.defaults) {
+    Chart.defaults.color = cssVar("--chart-text");
+    Chart.defaults.borderColor = cssVar("--chart-grid");
+  }
   charts.push(
     new Chart(canvas, {
       type,
@@ -247,7 +263,7 @@ function chart(id, type, labels, datasets, options = {}) {
                 y: {
                   beginAtZero: true,
                   ticks: { precision: 0, font: { size: 10 } },
-                  grid: { color: "#f0f2f5" },
+                  grid: { color: cssVar("--chart-grid") },
                   border: { display: false },
                 },
               },
@@ -800,6 +816,9 @@ async function render() {
       else if (active === "support") await supportPage(content, user, heading);
       else await dashboard(content);
     }
+    mountThemeToggles(() => {
+      if (charts.length) render();
+    });
     lucide.createIcons();
   } catch (error) {
     if (error.status === 401) {

@@ -5,6 +5,11 @@
   --line: #e5e8ed;
   --bg: #f3f4f6;
   --blue: #2563eb;
+  --chart-grid: #f0f2f5;
+  --chart-ink: #101828;
+  --chart-track: #e8eddb;
+  --chart-text: #6d7686;
+  color-scheme: light;
 }
 * {
   box-sizing: border-box;
@@ -1521,4 +1526,248 @@ tr:last-child td {
   .queue-actions {
     flex-wrap: wrap;
   }
+}
+
+/* ---------- Theme toggle ---------- */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+}
+.theme-toggle:hover {
+  background: #0000000d;
+}
+.landing-nav .theme-toggle,
+.auth-form .theme-toggle {
+  border: 1px solid var(--line);
+  width: 38px;
+  height: 38px;
+}
+.auth-theme {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- Dark mode ----------
+   Light mode keeps the original rules above; everything below only applies
+   when <html data-theme="dark">. Bootstrap components follow data-bs-theme. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1220;
+  --surface: #131c2b;
+  --surface-2: #182234;
+  --surface-3: #1f2a3d;
+  --text: #e6eaf0;
+  --muted: #98a3b5;
+  --line: #263244;
+  --input-border: #334155;
+  --accent-text: #c4ec5a;
+  --accent-bg: #24331a;
+  --chart-grid: #222d3f;
+  --chart-ink: #c9d2df;
+  --chart-track: #2a3648;
+  --chart-text: #98a3b5;
+}
+[data-theme="dark"] body {
+  color: var(--text);
+}
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] strong {
+  color: inherit;
+}
+[data-theme="dark"] .theme-toggle:hover {
+  background: #ffffff14;
+}
+/* Surfaces */
+[data-theme="dark"] .landing,
+[data-theme="dark"] .auth-wrap {
+  background: var(--bg);
+}
+[data-theme="dark"] .topbar,
+[data-theme="dark"] .panel,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .event-card,
+[data-theme="dark"] .match-card,
+[data-theme="dark"] .date-chip,
+[data-theme="dark"] .floating-note,
+[data-theme="dark"] .queue-card,
+[data-theme="dark"] .event-tabs button {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
+}
+[data-theme="dark"] .feature,
+[data-theme="dark"] .empty,
+[data-theme="dark"] th,
+[data-theme="dark"] .bg-light {
+  background: var(--surface-2) !important;
+}
+[data-theme="dark"] .sidebar {
+  border-right: 1px solid var(--line);
+}
+[data-theme="dark"] .topbar .search-label,
+[data-theme="dark"] th {
+  color: var(--muted);
+}
+[data-theme="dark"] td {
+  border-bottom-color: var(--line);
+}
+[data-theme="dark"] .empty {
+  border-color: var(--input-border);
+}
+[data-theme="dark"] .empty svg,
+[data-theme="dark"] .icon-button {
+  color: #a3adbd;
+}
+/* Buttons */
+[data-theme="dark"] .btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--input-border);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: #475569;
+}
+[data-theme="dark"] .btn-danger {
+  background: #3a1a1a;
+  color: #ffa69b;
+  border-color: #5c2622;
+}
+[data-theme="dark"] .event-tabs button.active,
+[data-theme="dark"] .swal2-confirm {
+  background: var(--green) !important;
+  border-color: var(--green);
+  color: var(--navy) !important;
+}
+/* Forms */
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+  background-color: #0f1726;
+  border-color: var(--input-border);
+  color: var(--text);
+}
+[data-theme="dark"] .form-control::placeholder {
+  color: #6b778a;
+}
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+  border-color: #90ad37;
+}
+/* Accents, badges and notices */
+[data-theme="dark"] .eyebrow,
+[data-theme="dark"] .feature svg,
+[data-theme="dark"] .auth-switch a,
+[data-theme="dark"] .match-team.winner {
+  color: var(--accent-text);
+}
+[data-theme="dark"] .avatar,
+[data-theme="dark"] .stat-icon {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}
+[data-theme="dark"] .badge {
+  background: var(--surface-3);
+  color: #b9c3d2;
+}
+[data-theme="dark"] .badge.green {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}
+[data-theme="dark"] .badge.blue {
+  background: #182a4d;
+  color: #9ab8ff;
+}
+[data-theme="dark"] .badge.orange {
+  background: #3a2a12;
+  color: #f2c070;
+}
+[data-theme="dark"] .notice {
+  background: #1b2713;
+  border-color: #34481f;
+  color: #d3ea95;
+}
+[data-theme="dark"] .error-message {
+  background: #3a1a1a;
+  color: #ffa69b;
+}
+/* Event cards and progress */
+[data-theme="dark"] .event-visual {
+  background: #1a2416;
+}
+[data-theme="dark"] .event-visual:after {
+  border-color: #3f4f2c;
+  background: linear-gradient(
+    transparent 49%,
+    #3f4f2c 49%,
+    #3f4f2c 50%,
+    transparent 50%
+  );
+}
+[data-theme="dark"] .event-visual.tournament {
+  background: #16203a;
+}
+[data-theme="dark"] .event-visual.tournament:after {
+  border-color: #33426a;
+  background: linear-gradient(
+    transparent 49%,
+    #33426a 49%,
+    #33426a 50%,
+    transparent 50%
+  );
+}
+[data-theme="dark"] .capacity-track,
+[data-theme="dark"] .rank-meter progress::-webkit-progress-bar {
+  background: var(--chart-track);
+}
+/* Ranked clubhouse */
+[data-theme="dark"] .rank-emblem {
+  background: color-mix(in srgb, var(--rank-color) 16%, var(--surface));
+  color: color-mix(in srgb, var(--rank-color) 55%, white);
+}
+[data-theme="dark"] .rank-stars {
+  color: #e6bd3c;
+}
+/* Live session queue */
+[data-theme="dark"] .queue-team {
+  background: #132540;
+  color: var(--text);
+}
+[data-theme="dark"] .queue-team.orange {
+  background: #33210f;
+}
+[data-theme="dark"] .queue-vacant {
+  color: #94a3b8;
+}
+[data-theme="dark"] .queue-upnext {
+  background: #0f2419;
+  border-color: #1f5135;
+}
+[data-theme="dark"] .queue-upnext > header {
+  background: #143523;
+  color: #8be7b0;
+}
+[data-theme="dark"] .queue-placeholder {
+  border-color: #2f4a3a;
+  color: #94b3a0;
+}
+/* Dialogs and toasts */
+[data-theme="dark"] .swal2-popup {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+[data-theme="dark"] .swal2-title,
+[data-theme="dark"] .swal2-html-container {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .swal2-cancel {
+  background: var(--surface-3) !important;
+  color: var(--text) !important;
+}
+[data-theme="dark"] .welcome-banner {
+  border: 1px solid var(--line);
 }
