@@ -35,11 +35,15 @@ Deployment: restart the Node server to load the new routes/models and refresh th
 
 ## Season lifecycle
 
-Administrators start a season immediately with an end date, rule snapshot, reason, and reset policy. Starting another season closes the previous one and archives its final rank, highest rank, and state. Corrections may legitimately update archived standings; prior changed ledger states remain in audit records.
+Super Admins start a season immediately with an end date, rule snapshot, reason, and reset policy. The recorded start time and selected end time appear in Ranked clubhouse alongside a live countdown. The current season is the default leaderboard when one is running. Starting another season closes the previous one early; an already expired season retains its original end time. The form sends the last known season ID to reject stale or concurrent duplicate starts.
 
-Policies: **none** retains stars/MMR; **partial** retains the configured fraction of stars, rounded down; **placement** resets stars to zero, moves MMR halfway to 1000, and restarts placement K. Both reward meters reset at season start. Lifetime wins, losses, ranked-match counts, highest rank, and longest streak are preserved. Rule changes apply to the new season; each match retains its captured rules for replay.
+Policies for new seasons: **none** retains stars; **partial** retains the configured fraction, rounded down (the UI recommends 50%); **full** resets stars to Rookie III with zero stars. All three preserve competitive MMR, placement-match progress, the separate doubles skill rating, lifetime wins/losses, ranked-match counts, highest rank, and longest streak. Both reward meters reset. Historic **placement** policy records retain their original replay semantics, but new seasons cannot select that MMR recalibration policy. Each match retains its captured rule snapshot for corrections.
 
-After a season's end date, new matches are outside that season and use default rules until an administrator starts another. No scheduler silently starts seasons. Season end processing occurs on the next ranking replay; the UI displays a past end date as ended. Historic season filters use archived states and season-specific match statistics.
+The server closes expired seasons automatically every 30 seconds and on startup, using the same transaction lock as score updates. It archives final and highest ranks without needing another result to trigger a replay. Closure does not reset stars: the next season's chosen policy applies when that season begins. After the end time, new ranked matches are outside the season and use default rules until a Super Admin starts another. The end instant is exclusive. The worker requires a running server and catches up after downtime; it never creates a new season automatically.
+
+**Season results & badges** is available to all signed-in users. Choose a season to see final/current stars, highest rank, season-only wins and losses, and your personal placement. Only players with at least one ranked match in that season enter this results table. Archived results include a final-tier finisher badge and champion, runner-up, or bronze badges for the top three. Sorting follows final stars, hidden MMR, wins, and stable player ID. MMR values are not exposed by the archive API. These are digital recognition badges, not payments or physical prizes.
+
+Badges are derived from archived snapshots and the verified match ledger, so they do not duplicate on reload or restart. Audited score corrections can update archived standings and badges; previous changed ledger states remain in audit records. The general season leaderboard remains available with its existing broader account filters.
 
 ## API
 
@@ -51,6 +55,7 @@ All routes require the existing JWT session cookie. Mutations also require `X-PM
 | `GET /api/ranking/players/:id`            | Public rank profile; MMR follows visibility policy                                |
 | `GET /api/ranking/players/:id/history`    | Before/after ranking history, `page`, optional `seasonId`                         |
 | `GET /api/ranking/players/:id/statistics` | Wins/losses, games, streaks, recent results                                       |
+| `GET /api/ranking/seasons/:id/results`    | Season results, peak ranks, win/loss records, and digital badges                  |
 | `GET /api/ranking/seasons`                | Season list and rule snapshots                                                    |
 | `POST /api/ranking/matchmaking/preview`   | Admin: `eventId`, unique `playerIds`, `rotation=least-played                      | registration` |
 | `POST /api/ranking/matches/:id/finalize`  | Admin: `scores: [{a,b}]`, `revision`; duplicate same results are idempotent       |

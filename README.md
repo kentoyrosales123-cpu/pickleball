@@ -224,3 +224,9 @@ Open **My profile**, choose a JPEG, PNG, or WebP file, and select **Upload photo
 Images are limited to 5 MB and 25 megapixels. The server decodes the image, rejects unsupported or animated formats, applies orientation, crops it to a square of at most 512 pixels, and re-encodes it as JPEG without original metadata. Images are stored in the MongoDB `profilephotos` collection, one per account, and survive application redeployments. Include this collection in database backups. No external storage account or additional environment variables are required.
 
 `PUT /api/players/me/photo` accepts raw image bytes with an image Content-Type and the usual authenticated cookie and X-PMS-Request header. `DELETE /api/players/me/photo` removes the current photo. `GET /api/players/:id/photo` serves images to signed-in club members. A player can change only their own image. Existing hosted image URLs remain supported by the profile API.
+
+## Seasonal competition
+
+Open **Ranked clubhouse** for the active season countdown and **Season results & badges** archive. Archived standings include final rank, highest rank, wins/losses, final-tier badges, and podium badges for players who completed a ranked match. Score corrections update archived results.
+
+Super Admins can start a season in **Ranked clubhouse ? Ranking seasons**, choose its end date, and select a star reset: keep all, keep a fraction (50% recommended), or reset to zero. These options preserve matchmaking MMR, doubles skill ratings, and lifetime statistics. Seasons close automatically when due; the next season is started explicitly by a Super Admin. Restart/redeploy to enable the season worker. Existing historical reset policies remain replay-compatible. See [season lifecycle](docs/star-ranking.md#season-lifecycle) for details.

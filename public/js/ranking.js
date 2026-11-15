@@ -1,3 +1,4 @@
+import { mountSeasons } from "./seasons.js";
 import { reviewPickleQue } from "./pickle-que.js";
 import { api, esc, avatar, date, toast, confirm } from "./api.js";
 const tiers = [
@@ -63,13 +64,20 @@ export async function rankingPage(container, user, chart) {
       api("/ranking/seasons"),
       api("/events"),
     ]);
-  container.innerHTML = `<div class="page-heading"><div><h1>Ranked clubhouse</h1><p>From Rookie to Legend. Earn your place, one verified match at a time.</p></div></div><div id="rank-profile"></div><section class="panel"><div class="panel-header"><h3>Ranked leaderboard</h3><span class="badge green">LIVE</span></div><div class="filters"><input id="star-search" class="form-control" placeholder="Search players" aria-label="Search ranked players"><select id="star-tier" class="form-select" aria-label="Rank tier"><option value="">All tiers</option>${tiers.map((t) => `<option>${t}</option>`).join("")}</select><select id="star-period" class="form-select" aria-label="Ranking period"><option value="current">Current rank</option><option value="month">Monthly performance (UTC)</option><option value="season">Season rankings</option><option value="all-time">All-time match stars</option></select><select id="star-season" class="form-select" aria-label="Season"><option value="">Current season</option>${seasons.seasons.map((s) => `<option value="${s._id}">${esc(s.name)}</option>`).join("")}</select><select id="star-event" class="form-select" aria-label="Event participants"><option value="">All players</option>${events.events.map((e) => `<option value="${e._id}">${esc(e.eventName)}</option>`).join("")}</select></div><p class="subtle" id="star-label"></p><div id="star-table"></div><div class="form-actions"><button id="star-prev" class="btn btn-secondary btn-sm">Previous</button><button id="star-next" class="btn btn-secondary btn-sm">Next</button></div></section>${admin ? '<div id="rank-admin" class="mt-4"></div>' : ""}`;
+  container.innerHTML = `<div class="page-heading"><div><h1>Ranked clubhouse</h1><p>From Rookie to Legend. Earn your place, one verified match at a time.</p></div></div><div id="season-hub"></div><div id="rank-profile"></div><section class="panel"><div class="panel-header"><h3>Ranked leaderboard</h3><span class="badge green">LIVE</span></div><div class="filters"><input id="star-search" class="form-control" placeholder="Search players" aria-label="Search ranked players"><select id="star-tier" class="form-select" aria-label="Rank tier"><option value="">All tiers</option>${tiers.map((t) => `<option>${t}</option>`).join("")}</select><select id="star-period" class="form-select" aria-label="Ranking period"><option value="current">Current rank</option><option value="month">Monthly performance (UTC)</option><option value="season">Season rankings</option><option value="all-time">All-time match stars</option></select><select id="star-season" class="form-select" aria-label="Season"><option value="">Current season</option>${seasons.seasons.map((s) => `<option value="${s._id}">${esc(s.name)}</option>`).join("")}</select><select id="star-event" class="form-select" aria-label="Event participants"><option value="">All players</option>${events.events.map((e) => `<option value="${e._id}">${esc(e.eventName)}</option>`).join("")}</select></div><p class="subtle" id="star-label"></p><div id="star-table"></div><div class="form-actions"><button id="star-prev" class="btn btn-secondary btn-sm">Previous</button><button id="star-next" class="btn btn-secondary btn-sm">Next</button></div></section>${admin ? '<div id="rank-admin" class="mt-4"></div>' : ""}`;
   if (!admin)
     await mountStarRanking(
       container.querySelector("#rank-profile"),
       user,
       chart,
     );
+  const currentSeason = seasons.seasons.find(
+    (s) => s.status === "active" && new Date(s.endDate) > new Date(),
+  );
+  if (currentSeason) {
+    container.querySelector("#star-period").value = "season";
+    container.querySelector("#star-season").value = currentSeason._id;
+  }
   let page = 1;
   const load = async () => {
     const q = new URLSearchParams({
@@ -121,6 +129,11 @@ export async function rankingPage(container, user, chart) {
       events.events,
       seasons.seasons,
     );
+  return mountSeasons(
+    container.querySelector("#season-hub"),
+    seasons.seasons,
+    user.id,
+  );
 }
 async function inspectPlayer(id, reload) {
   const [data, history] = await Promise.all([
@@ -156,7 +169,7 @@ async function inspectPlayer(id, reload) {
 }
 async function adminRanking(container, events, seasons) {
   const settings = await api("/admin/ranking/settings");
-  container.innerHTML = `<section class="panel mb-4"><h3>Ranked event operations</h3><p>Use the event workspace to register players, edit teams, publish court schedules, and verify scores.</p><div class="filters"><select id="rank-operation-event" class="form-select" aria-label="Event to manage"><option value="">Select an event</option>${events.map((e) => `<option value="${e._id}">${esc(e.eventName)}</option>`).join("")}</select><a id="rank-workspace" class="btn btn-secondary" href="#/events">Open event workspace</a></div><div id="rank-roster"></div><div id="rank-preview"></div></section><section class="panel mb-4"><h3>MMR visibility</h3><form id="rank-visibility"><label class="my-3"><input name="showMMR" type="checkbox" ${settings.showMMR ? "checked" : ""}> Allow players to see ranked MMR and history charts</label><input name="reason" class="form-control" placeholder="Reason for changing visibility" aria-label="Visibility reason" minlength="3" maxlength="500" required><button class="btn btn-primary mt-3">Save visibility</button></form></section><section class="panel"><h3>Ranking seasons</h3><p>A new season closes the current season and preserves its final standings. Lifetime wins and losses remain intact.</p><div class="table-wrap"><table><thead><tr><th>Season</th><th>Dates</th><th>Status</th><th>Reset</th></tr></thead><tbody>${seasons.map((s) => `<tr><td>${esc(s.name)}</td><td>${date(s.startDate)} – ${date(s.endDate)}</td><td>${s.status === "active" && new Date(s.endDate) < new Date() ? "Ended" : esc(s.status)}</td><td>${esc(s.resetPolicy)}</td></tr>`).join("")}</tbody></table></div><form id="rank-season-form" class="mt-4"><div class="form-grid"><div><label class="form-label" for="season-name">Season name</label><input id="season-name" name="name" class="form-control" required maxlength="100"></div><div><label class="form-label" for="season-end">End date and time</label><input id="season-end" name="endDate" type="datetime-local" class="form-control" required></div><div><label class="form-label" for="season-reset">Reset policy</label><select id="season-reset" name="resetPolicy" class="form-select"><option value="none">No star reset</option><option value="partial">Partial star reset</option><option value="placement">Placement recalibration</option></select></div><div><label class="form-label" for="season-keep">Fraction of stars to keep (partial)</label><input id="season-keep" name="keepFraction" type="number" min="0" max="1" step="0.05" value="0.5" class="form-control" required></div>${Object.entries(
+  container.innerHTML = `<section class="panel mb-4"><h3>Ranked event operations</h3><p>Use the event workspace to register players, edit teams, publish court schedules, and verify scores.</p><div class="filters"><select id="rank-operation-event" class="form-select" aria-label="Event to manage"><option value="">Select an event</option>${events.map((e) => `<option value="${e._id}">${esc(e.eventName)}</option>`).join("")}</select><a id="rank-workspace" class="btn btn-secondary" href="#/events">Open event workspace</a></div><div id="rank-roster"></div><div id="rank-preview"></div></section><section class="panel mb-4"><h3>MMR visibility</h3><form id="rank-visibility"><label class="my-3"><input name="showMMR" type="checkbox" ${settings.showMMR ? "checked" : ""}> Allow players to see ranked MMR and history charts</label><input name="reason" class="form-control" placeholder="Reason for changing visibility" aria-label="Visibility reason" minlength="3" maxlength="500" required><button class="btn btn-primary mt-3">Save visibility</button></form></section><section class="panel"><h3>Ranking seasons</h3><p>A new season closes the current season and preserves its final standings. Lifetime wins and losses remain intact.</p><div class="table-wrap"><table><thead><tr><th>Season</th><th>Dates</th><th>Status</th><th>Reset</th></tr></thead><tbody>${seasons.map((s) => `<tr><td>${esc(s.name)}</td><td>${date(s.startDate)} – ${date(s.endDate)}</td><td>${s.status === "active" && new Date(s.endDate) < new Date() ? "Ended" : esc(s.status)}</td><td>${esc(s.resetPolicy)}</td></tr>`).join("")}</tbody></table></div><form id="rank-season-form" class="mt-4"><div class="form-grid"><div><label class="form-label" for="season-name">Season name</label><input id="season-name" name="name" class="form-control" required maxlength="100"></div><div><label class="form-label" for="season-end">End date and time</label><input id="season-end" name="endDate" type="datetime-local" class="form-control" required></div><div><label class="form-label" for="season-reset">Reset policy</label><select id="season-reset" name="resetPolicy" class="form-select"><option value="none">No star reset</option><option value="partial" selected>Partial star reset (recommended)</option><option value="full">Reset stars to zero</option></select></div><div><label class="form-label" for="season-keep">Fraction of stars to keep (partial)</label><input id="season-keep" name="keepFraction" type="number" min="0" max="1" step="0.05" value="0.5" class="form-control" required></div>${Object.entries(
     settings.rules,
   )
     .map(
@@ -165,7 +178,7 @@ async function adminRanking(container, events, seasons) {
     )
     .join(
       "",
-    )}<div class="wide"><label class="form-label" for="season-reason">Reason</label><input id="season-reason" name="reason" minlength="3" maxlength="500" class="form-control" required></div></div><p class="subtle mt-3">Placement recalibration resets stars to zero, moves MMR halfway toward 1000, and restarts ten placement matches. Both reward meters reset at season start.</p><button class="btn btn-primary">Start season now</button></form></section>`;
+    )}<div class="wide"><label class="form-label" for="season-reason">Reason</label><input id="season-reason" name="reason" minlength="3" maxlength="500" class="form-control" required></div></div><p class="subtle mt-3">All reset options preserve matchmaking MMR, skill ratings, and lifetime statistics. Partial reset keeps the selected fraction of stars; full reset starts at Rookie III. Both reward meters reset at season start.</p><button class="btn btn-primary">Start season now</button></form></section>`;
   container.querySelector("#rank-visibility").onsubmit = async (e) => {
     e.preventDefault();
     try {
@@ -193,6 +206,7 @@ async function adminRanking(container, events, seasons) {
       return;
     try {
       await api("/admin/ranking/seasons", "POST", {
+        expectedSeasonId: seasons[0]?._id || null,
         name: f.get("name"),
         endDate: new Date(f.get("endDate")).toISOString(),
         resetPolicy: f.get("resetPolicy"),

@@ -116,8 +116,8 @@ export const playerController = {
       )
         .select(
           req.user.role === "super-admin"
-            ? "fullName username email officialRanking provisionalRanking rankingStatus active role createdAt doublesRating doublesRatedMatches automaticRankingStatus rankingOverride"
-            : "fullName officialRanking provisionalRanking active role doublesRating",
+            ? "fullName username email profileImage officialRanking provisionalRanking rankingStatus active role createdAt doublesRating doublesRatedMatches automaticRankingStatus rankingOverride"
+            : "fullName profileImage officialRanking provisionalRanking active role doublesRating",
         )
         .sort({ createdAt: -1 })
         .limit(1000),

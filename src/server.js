@@ -10,6 +10,7 @@ import { identify } from "./middleware/security.js";
 import { setSocket } from "./services/notifications.js";
 import { migrateRatings } from "./migrations/001-doubles-ratings.js";
 import { startAlerts } from "./services/alerts.js";
+import { startSeasonWorker } from "./services/seasons.js";
 const config = getConfig();
 await connectDatabase(config.MONGODB_URI);
 await migrateRatings();
@@ -50,11 +51,12 @@ io.on("connection", (socket) => {
 });
 setSocket(io);
 const stopAlerts = startAlerts(config);
+const stopSeasons = startSeasonWorker();
 server.listen(config.PORT, () =>
   console.log(`CourtSide running at ${config.APP_URL}`),
 );
 async function shutdown() {
-  await stopAlerts();
+  await Promise.all([stopAlerts(), stopSeasons()]);
   io.close();
   server.close();
   await mongoose.disconnect();

@@ -729,6 +729,8 @@ let rendering = false;
 async function render() {
   if (rendering) return;
   rendering = true;
+  state.cleanupRanking?.();
+  state.cleanupRanking = null;
   state.cleanupLiveSession?.();
   state.cleanupLiveSession = null;
   charts.forEach((c) => c.destroy());
@@ -768,7 +770,8 @@ async function render() {
       else if (active === "live-session")
         state.cleanupLiveSession = await mountLiveSession(content, state);
       else if (active === "history") await historyPage(content);
-      else if (active === "ranking") await rankingPage(content, user, chart);
+      else if (active === "ranking")
+        state.cleanupRanking = await rankingPage(content, user, chart);
       else if (active === "leaderboard") await leaderboard(content);
       else if (active === "players" && user.role === "super-admin")
         await playersPage(content);

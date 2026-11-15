@@ -60,7 +60,7 @@ const season = new Schema(
     status: { type: String, enum: ["active", "closed"], required: true },
     resetPolicy: {
       type: String,
-      enum: ["none", "partial", "placement"],
+      enum: ["none", "partial", "full", "placement"],
       default: "none",
     },
     keepFraction: { type: Number, min: 0, max: 1, default: 0.5 },

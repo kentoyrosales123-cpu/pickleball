@@ -453,7 +453,7 @@ test("rank dashboard renders real API results and shows charts only when enabled
   }
 });
 
-test("ranked administrator page previews and saves teams through the existing event APIs", async () => {
+test("ranked administrator page previews and saves teams through the existing event APIs", async (t) => {
   const f = await fixture();
   const dom = new JSDOM('<main id="content"></main>', {
     url: "http://localhost:3000",
@@ -477,10 +477,11 @@ test("ranked administrator page previews and saves teams through the existing ev
   };
   try {
     const { rankingPage } = await import("../public/js/ranking.js");
-    await rankingPage(document.querySelector("main"), {
+    const cleanup = await rankingPage(document.querySelector("main"), {
       id: String(admin._id),
       role: "super-admin",
     });
+    t.after(cleanup);
     assert.ok(document.querySelector("#rank-season-form"));
     const event = document.querySelector("#rank-operation-event");
     event.value = String(f.event._id);
@@ -727,3 +728,102 @@ for (const eventType of ["open-play", "tournament"]) {
     );
   });
 }
+
+test("season closure archives badges, corrections replay, and star resets preserve skill", async () => {
+  const { RankingSeason } = await import("../src/models/ranking.js");
+  const { closeExpiredSeasons } = await import("../src/services/seasons.js");
+  const f = await fixture();
+  const latest = await RankingSeason.findOne().sort({ startDate: -1 });
+  const start = (name, resetPolicy, expectedSeasonId) =>
+    call("post", "/admin/ranking/seasons", {
+      name,
+      resetPolicy,
+      expectedSeasonId,
+      keepFraction: 0.5,
+      endDate: new Date(Date.now() + 86400000).toISOString(),
+      reason: "Club season cycle",
+    });
+  const first = await start(
+    "Archive test season",
+    "partial",
+    latest ? String(latest._id) : null,
+  );
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+  const seasonId = first.body.season._id;
+  const game = await match(f);
+  assert.equal((await finalize(game)).status, 200);
+  const before = (await profile(f.players[0])).state;
+  const skill = (await User.findById(f.players[0]._id)).doublesRating;
+  const end = new Date(Date.now() - 1);
+  await RankingSeason.updateOne({ _id: seasonId }, { endDate: end });
+  const closures = await Promise.all([
+    closeExpiredSeasons(),
+    closeExpiredSeasons(),
+  ]);
+  assert.equal(
+    closures.reduce((a, b) => a + b),
+    1,
+  );
+  assert.equal(await closeExpiredSeasons(), 0);
+  assert.equal((await RankingSeason.findById(seasonId)).status, "closed");
+  const archive = await call(
+    "get",
+    `/ranking/seasons/${seasonId}/results`,
+    undefined,
+    cookie(f.players[0]),
+  );
+  assert.equal(archive.status, 200);
+  assert.equal(archive.body.rows.length, 4);
+  const own = archive.body.rows.find(
+    (r) => r.playerId === String(f.players[0]._id),
+  );
+  assert.equal(own.wins, 1);
+  assert.equal(own.losses, 0);
+  assert.equal(own.finalStars, before.rankStars);
+  assert.ok(own.highestStars >= own.finalStars);
+  assert.ok(own.badges.some((b) => b.endsWith("finisher")));
+  assert.equal(JSON.stringify(archive.body).includes('"mmr"'), false);
+  const currentGame = await Match.findById(game._id);
+  const corrected = await call("post", `/ranking/matches/${game._id}/correct`, {
+    revision: currentGame.revision,
+    scores: [{ a: 5, b: 11 }],
+    reason: "Correct archived game",
+  });
+  assert.equal(corrected.status, 200, JSON.stringify(corrected.body));
+  const updated = await call("get", `/ranking/seasons/${seasonId}/results`);
+  assert.equal(
+    updated.body.rows.find((r) => r.playerId === String(f.players[0]._id))
+      .losses,
+    1,
+  );
+  const beforeReset = (await profile(f.players[0])).state;
+  const responses = await Promise.all([
+    start("Fresh season", "full", seasonId),
+    start("Duplicate season", "full", seasonId),
+  ]);
+  assert.deepEqual(responses.map((r) => r.status).sort(), [201, 409]);
+  const after = (await profile(f.players[0])).state;
+  assert.equal(after.rankStars, 0);
+  assert.equal(after.mmr, beforeReset.mmr);
+  assert.equal(after.placementCount, beforeReset.placementCount);
+  assert.equal(after.totalWins, beforeReset.totalWins);
+  assert.equal(after.totalLosses, beforeReset.totalLosses);
+  assert.equal((await User.findById(f.players[0]._id)).doublesRating, skill);
+  assert.equal(+(await RankingSeason.findById(seasonId)).endDate, +end);
+  assert.equal(
+    (
+      await call(
+        "post",
+        "/admin/ranking/seasons",
+        {
+          name: "Forbidden",
+          resetPolicy: "full",
+          endDate: new Date(Date.now() + 86400000).toISOString(),
+          reason: "Not authorized",
+        },
+        cookie(f.players[0]),
+      )
+    ).status,
+    403,
+  );
+});

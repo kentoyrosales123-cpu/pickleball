@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { seasonResults } from "../services/seasons.js";
 import mongoose from "mongoose";
 import { z } from "zod";
 import { admin, superAdmin, ensure, validate } from "../middleware/security.js";
@@ -337,6 +338,11 @@ export function rankingRoutes() {
       })),
     });
   });
+  r.get("/ranking/seasons/:id/results", async (req, res) => {
+    const result = await seasonResults(checkedId(req.params.id));
+    ensure(result, "Season not found", 404);
+    res.json(result);
+  });
   r.get("/ranking/seasons", async (req, res) =>
     res.json({
       seasons: await RankingSeason.find().sort({ startDate: -1 }).lean(),
@@ -421,7 +427,8 @@ export function rankingRoutes() {
         .object({
           name: z.string().trim().min(1).max(100),
           endDate: z.coerce.date(),
-          resetPolicy: z.enum(["none", "partial", "placement"]),
+          resetPolicy: z.enum(["none", "partial", "full"]),
+          expectedSeasonId: id.nullable().optional(),
           keepFraction: z.number().min(0).max(1).default(0.5),
           rankingRules: ruleSchema.default(RULES),
           reason,
@@ -433,12 +440,27 @@ export function rankingRoutes() {
         await lockRatings(session);
         const now = new Date();
         ensure(req.body.endDate > now, "Season end must be in the future");
+        const previous = await RankingSeason.findOne()
+          .sort({ startDate: -1 })
+          .session(session);
+        if (req.body.expectedSeasonId !== undefined)
+          ensure(
+            (previous ? String(previous._id) : null) ===
+              req.body.expectedSeasonId,
+            "Season changed. Refresh before starting another.",
+            409,
+          );
         await RankingSeason.updateMany(
-          { status: "active" },
+          { status: "active", endDate: { $gt: now } },
           { $set: { status: "closed", endDate: now } },
           { session },
         );
-        const { reason: why, ...data } = req.body;
+        await RankingSeason.updateMany(
+          { status: "active", endDate: { $lte: now } },
+          { $set: { status: "closed" } },
+          { session },
+        );
+        const { reason: why, expectedSeasonId, ...data } = req.body;
         const [created] = await RankingSeason.create(
           [{ ...data, startDate: now, status: "active" }],
           { session },

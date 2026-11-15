@@ -154,6 +154,7 @@ export function replayRanking(playerIds, entries) {
           });
         if (entry.resetPolicy === "partial")
           state.rankStars = Math.floor(state.rankStars * entry.keepFraction);
+        if (entry.resetPolicy === "full") state.rankStars = 0;
         if (entry.resetPolicy === "placement") {
           state.rankStars = 0;
           state.mmr = (state.mmr + 1000) / 2;

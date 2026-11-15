@@ -40,7 +40,7 @@ export async function captureStarPolicy(match, session) {
       session,
     );
     const now = match.completedAt || new Date();
-    if (season && now >= season.startDate && now <= season.endDate) {
+    if (season && now >= season.startDate && now < season.endDate) {
       match.starPolicy = { ...season.rankingRules };
       match.rankingSeasonId = season._id;
     } else match.starPolicy = { ...RULES };
