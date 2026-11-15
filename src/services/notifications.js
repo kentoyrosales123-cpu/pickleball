@@ -27,6 +27,10 @@ export function publish() {
   io?.emit("refresh");
   io?.emit("ranking:leaderboard-changed");
 }
+// Refreshes only the given users' clients (call after commit).
+export function publishTo(userIds) {
+  for (const id of new Set(userIds.map(String))) io?.to(id).emit("refresh");
+}
 // Called only after the surrounding result transaction has committed.
 export async function publishRankingResult(matchId) {
   if (!io) return;

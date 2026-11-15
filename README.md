@@ -68,6 +68,10 @@ Verification and reset tokens expire after one hour, are stored as SHA-256 diges
 - Skill numbers are an approximate balancing heuristic. Optimization is randomized and aims to reduce imbalance; it is not a claim that skill intervals measure exact playing strength.
 - Fees are recorded in PHP. The specification did not request a payment gateway; payment collection is handled by the club.
 
+## Help & support
+
+Every signed-in user has a **Help & support** sidebar item. Players report a _Scam or fraud_, _Bug or error_, _Account problem_, or _Other_ issue, and can track each report's status and the club's reply. A new report notifies every active admin and super admin. Administrators see the **Support inbox** on the same page, can filter by status and category, and can set a report to open, in review, or resolved with an optional reply. Each update notifies the reporter. Every create and update is recorded in the audit log. Submissions are limited to 10 per user per hour. APIs: `POST /api/support/tickets`, `GET /api/support/tickets/mine`, `GET /api/admin/support/tickets?status=&category=`, `PUT /api/admin/support/tickets/:id`.
+
 ## Competitive star rankings
 
 The **Ranked clubhouse** adds Rookie-to-Legend stars, protection and double-star meters, hidden competitive MMR, ranked leaderboards, season resets, and audited corrections. It reuses existing user accounts, event registration, team editing, brackets, scoring, and JWT roles. See [star-ranking.md](docs/star-ranking.md) for rules, APIs, migrations, workflow, verification, and deployment limits. The existing skill-category Elo described below remains separate.

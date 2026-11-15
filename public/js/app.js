@@ -16,6 +16,7 @@ import {
   download,
 } from "./api.js";
 import { eventDetail, eventForm } from "./events.js";
+import { supportPage } from "./support.js";
 import {
   mountPlayerRating,
   mountRatingSettings,
@@ -75,6 +76,7 @@ function shell(route) {
         ...(user.role === "super-admin"
           ? [["settings", "settings-2", "Settings"]]
           : []),
+        ["support", "life-buoy", "Support inbox"],
       ]
     : [
         ["dashboard", "layout-dashboard", "Overview"],
@@ -86,6 +88,7 @@ function shell(route) {
         ["leaderboard", "medal", "Leaderboard"],
         ["statistics", "chart-no-axes-combined", "My statistics"],
         ["profile", "user-round", "My profile"],
+        ["support", "life-buoy", "Help & support"],
       ];
   app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions"><span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
   document.querySelector("#logout").onclick = async () => {
@@ -780,6 +783,7 @@ async function render() {
       else if (active === "settings" && user.role === "super-admin")
         await settings(content);
       else if (active === "notifications") await notifications(content);
+      else if (active === "support") await supportPage(content, user, heading);
       else await dashboard(content);
     }
     lucide.createIcons();

@@ -18,6 +18,11 @@ import {
 } from "../controllers/auth.js";
 import { eventController as e, eventSchema } from "../controllers/events.js";
 import { playerController as p } from "../controllers/players.js";
+import {
+  supportController as support,
+  ticketSchema,
+  ticketUpdateSchema,
+} from "../controllers/support.js";
 import { Settings, RANKINGS } from "../models/index.js";
 import {
   ratingController as ratings,
@@ -122,6 +127,29 @@ export function api(config) {
       }),
     ),
     p.profile,
+  );
+  const supportLimit = rateLimit({
+    windowMs: 60 * 60_000,
+    limit: config.NODE_ENV === "test" ? 1000 : 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: {
+      message: "Too many support reports. Please try again in an hour.",
+    },
+  });
+  r.post(
+    "/support/tickets",
+    supportLimit,
+    validate(ticketSchema),
+    support.create,
+  );
+  r.get("/support/tickets/mine", support.mine);
+  r.get("/admin/support/tickets", admin, support.list);
+  r.put(
+    "/admin/support/tickets/:id",
+    admin,
+    validate(ticketUpdateSchema),
+    support.update,
   );
   r.get("/players/me/stats", p.stats);
   r.get("/players/me/live-sessions", queue.mine);

@@ -291,6 +291,24 @@ const notification = new Schema(
 notification.index({ userId: 1, createdAt: -1 });
 notification.index({ deliveryKey: 1 }, { unique: true, sparse: true });
 notification.index({ emailState: 1, emailAttemptAt: 1 });
+export const SUPPORT_CATEGORIES = ["scam", "bug", "account", "other"];
+export const SUPPORT_STATUSES = ["open", "in-progress", "resolved"];
+const supportTicket = new Schema(
+  {
+    userId: ref("User"),
+    category: { type: String, enum: SUPPORT_CATEGORIES, required: true },
+    subject: { type: String, required: true, maxlength: 120 },
+    message: { type: String, required: true, maxlength: 4000 },
+    page: { type: String, maxlength: 200 },
+    status: { type: String, enum: SUPPORT_STATUSES, default: "open" },
+    adminReply: { type: String, maxlength: 2000, default: "" },
+    handledBy: ref("User", false),
+    resolvedAt: Date,
+  },
+  options,
+);
+supportTicket.index({ userId: 1, createdAt: -1 });
+supportTicket.index({ status: 1, createdAt: -1 });
 const audit = new Schema(
   {
     actorId: ref("User"),
@@ -444,6 +462,7 @@ export const PlayerRankingHistory = mongoose.model(
   history,
 );
 export const Notification = mongoose.model("Notification", notification);
+export const SupportTicket = mongoose.model("SupportTicket", supportTicket);
 export const AuditLog = mongoose.model("AuditLog", audit);
 export const ActionToken = mongoose.model("ActionToken", token);
 export const Settings = mongoose.model("Settings", settings);
