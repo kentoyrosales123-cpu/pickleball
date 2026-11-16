@@ -1771,3 +1771,54 @@ tr:last-child td {
 [data-theme="dark"] .welcome-banner {
   border: 1px solid var(--line);
 }
+
+/* ---------- Installable app (PWA) ---------- */
+.install-app {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border: 1px solid #b5e61d55;
+  border-radius: 8px;
+  background: #b5e61d14;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 600;
+}
+.install-app:hover {
+  background: #b5e61d26;
+}
+.install-app svg {
+  width: 18px;
+  height: 18px;
+}
+/* iPhone notch / home indicator when installed (viewport-fit=cover) */
+.sidebar {
+  padding-top: max(30px, env(safe-area-inset-top));
+  padding-bottom: max(30px, env(safe-area-inset-bottom));
+}
+.topbar {
+  padding-top: env(safe-area-inset-top);
+  height: calc(78px + env(safe-area-inset-top));
+}
+@media (display-mode: standalone) {
+  .landing-nav {
+    padding-top: calc(25px + env(safe-area-inset-top));
+  }
+  .auth-form {
+    padding-top: calc(30px + env(safe-area-inset-top));
+  }
+}
+@media (max-height: 900px) {
+  .sidebar {
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+}
+@media (max-width: 800px) {
+  .topbar {
+    height: calc(66px + env(safe-area-inset-top));
+  }
+}

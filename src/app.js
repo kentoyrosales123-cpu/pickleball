@@ -72,7 +72,16 @@ export function createApp(config) {
     app.get(`/vendor/${url}`, (req, res) =>
       res.sendFile(path.join(root, "node_modules", file)),
     );
-  app.use(express.static(path.join(root, "public")));
+  app.use(
+    express.static(path.join(root, "public"), {
+      setHeaders(res, file) {
+        // Browsers must always re-check the service worker and manifest so
+        // app updates roll out on the next visit.
+        if (/[\\/](sw\.js|manifest\.webmanifest)$/.test(file))
+          res.setHeader("Cache-Control", "no-cache");
+      },
+    }),
+  );
   app.use(errors);
   return app;
 }

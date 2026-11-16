@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#101828" />
+    <title>Offline · CourtSide</title>
+    <link rel="icon" href="/icons/favicon-32.png" type="image/png" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f3f4f6;
+        --card: #ffffff;
+        --text: #101828;
+        --muted: #6d7686;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --card: #131c2b;
+          --text: #e6eaf0;
+          --muted: #98a3b5;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      main {
+        background: var(--card);
+        border-radius: 16px;
+        padding: 36px 28px;
+        max-width: 380px;
+        text-align: center;
+      }
+      img {
+        width: 72px;
+        height: 72px;
+        border-radius: 18px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 20px 0 8px;
+      }
+      p {
+        color: var(--muted);
+        line-height: 1.5;
+        margin: 0 0 24px;
+      }
+      button {
+        background: #b5e61d;
+        color: #101828;
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 22px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>You’re offline</h1>
+      <p>
+        CourtSide needs a connection for live scores, queues and registrations.
+        We’ll reconnect as soon as you’re back online.
+      </p>
+      <button id="retry" type="button">Try again</button>
+    </main>
+    <script src="/js/offline.js"></script>
+  </body>
+</html>

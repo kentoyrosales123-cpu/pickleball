@@ -72,6 +72,12 @@ Verification and reset tokens expire after one hour, are stored as SHA-256 diges
 
 Every signed-in user has a **Help & support** sidebar item. Players report a _Scam or fraud_, _Bug or error_, _Account problem_, or _Other_ issue, and can track each report's status and the club's reply. A new report notifies every active admin and super admin. Administrators see the **Support inbox** on the same page, can filter by status and category, and can set a report to open, in review, or resolved with an optional reply. Each update notifies the reporter. Every create and update is recorded in the audit log. Submissions are limited to 10 per user per hour. APIs: `POST /api/support/tickets`, `GET /api/support/tickets/mine`, `GET /api/admin/support/tickets?status=&category=`, `PUT /api/admin/support/tickets/:id`.
 
+## Installable app (PWA)
+
+CourtSide can be installed on Android, iPhone/iPad, Windows, macOS and ChromeOS. Signed-in users see **Install app** in the sidebar when their browser supports it. On Android and desktop Chrome/Edge it opens the browser's install dialog. On iPhone/iPad it shows the Safari **Share → Add to Home Screen** steps. The installed app opens full-screen with the CourtSide icon and has shortcuts to My Live Session and Explore events.
+
+The service worker (`public/sw.js`) never caches `/api`, Socket.IO or `/health`, so scores, queues and registrations are always live. App pages, scripts and styles are network-first with a 4-second fallback to the cached copy, so deploys reach users on their next visit and the app still opens on weak court-side signal. Vendor libraries and icons are cache-first; bump `VERSION` in `sw.js` after upgrading them. With no connection the app shows a "You're offline" screen and reloads automatically when the connection returns. Service workers need HTTPS (Render provides it) or `localhost`.
+
 ## Competitive star rankings
 
 The **Ranked clubhouse** adds Rookie-to-Legend stars, protection and double-star meters, hidden competitive MMR, ranked leaderboards, season resets, and audited corrections. It reuses existing user accounts, event registration, team editing, brackets, scoring, and JWT roles. See [star-ranking.md](docs/star-ranking.md) for rules, APIs, migrations, workflow, verification, and deployment limits. The existing skill-category Elo described below remains separate.

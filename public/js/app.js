@@ -18,6 +18,8 @@ import {
 import { eventDetail, eventForm } from "./events.js";
 import { supportPage } from "./support.js";
 import { themeToggle, mountThemeToggles, cssVar } from "./theme.js";
+import { registerPWA, mountInstallButton } from "./pwa.js";
+registerPWA();
 import {
   mountPlayerRating,
   mountRatingSettings,
@@ -91,7 +93,7 @@ function shell(route) {
         ["profile", "user-round", "My profile"],
         ["support", "life-buoy", "Help & support"],
       ];
-  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions">${themeToggle()}<span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
+  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><div id="install-slot"></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions">${themeToggle()}<span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
   document.querySelector("#logout").onclick = async () => {
     await api("/auth/logout", "POST", {});
     user = null;
@@ -99,6 +101,7 @@ function shell(route) {
     location.hash = "#/";
     render();
   };
+  mountInstallButton(document.querySelector("#install-slot"));
   const sidebar = document.querySelector(".sidebar");
   const menu = document.querySelector("#menu");
   menu.setAttribute("aria-expanded", "false");
@@ -922,6 +925,7 @@ try {
   if (user) connectSocket();
   await render();
 } catch (e) {
-  app.innerHTML = `<div class="loading"><div><h2>We couldn’t connect to the club.</h2><p>${esc(e.message)}</p><button class="btn btn-primary" id="reload">Try again</button></div></div>`;
+  app.innerHTML = `<div class="loading"><div><h2>${navigator.onLine === false ? "You’re offline." : "We couldn’t connect to the club."}</h2><p>${navigator.onLine === false ? "CourtSide needs a connection for live scores, queues and registrations. We’ll reconnect when you’re back online." : esc(e.message)}</p><button class="btn btn-primary" id="reload">Try again</button></div></div>`;
   document.querySelector("#reload").onclick = () => location.reload();
+  window.addEventListener("online", () => location.reload(), { once: true });
 }
