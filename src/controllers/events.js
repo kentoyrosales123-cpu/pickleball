@@ -11,8 +11,10 @@ import {
   User,
   Tournament,
   TeamProposal,
+  Club,
 } from "../models/index.js";
 import { ensure } from "../middleware/security.js";
+import { canManage } from "./clubs.js";
 import { registerPlayer } from "../services/registration.js";
 import {
   generateTeams,
@@ -168,6 +170,7 @@ export const eventController = {
     const events = await Event.find(filter)
       .sort({ startDateTime: 1 })
       .limit(200)
+      .populate("clubId", "name")
       .lean();
     const registrations = req.user
       ? await EventRegistration.find({ userId: req.user._id }).lean()
@@ -183,13 +186,33 @@ export const eventController = {
   },
   detail: async (req, res) => {
     const event = await getEvent(req.params.id);
-    ensure(
-      ["admin", "super-admin"].includes(req.user.role) ||
-        event.status !== "draft",
-      "Event not found",
-      404,
-    );
-    res.json({ event });
+    const manager = await canManage(event, req.user);
+    ensure(manager || event.status !== "draft", "Event not found", 404);
+    const [club, mine] = await Promise.all([
+      event.clubId
+        ? Club.findById(event.clubId, "name paymentInstructions").lean()
+        : null,
+      EventRegistration.findOne({
+        eventId: event._id,
+        userId: req.user._id,
+      }).lean(),
+    ]);
+    res.json({
+      event,
+      canManage: manager,
+      club: club && {
+        id: String(club._id),
+        name: club.name,
+        paymentInstructions: club.paymentInstructions,
+      },
+      myRegistration: mine && {
+        registrationStatus: mine.registrationStatus,
+        attendance: mine.attendance || "pending",
+        paymentStatus: mine.paymentStatus || "unpaid",
+        paymentMethod: mine.paymentMethod,
+        paymentReference: mine.paymentReference,
+      },
+    });
   },
   create: async (req, res) => {
     const event = await mongoose.connection.transaction(async (session) => {

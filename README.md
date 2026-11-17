@@ -72,6 +72,22 @@ Verification and reset tokens expire after one hour, are stored as SHA-256 diges
 
 Every signed-in user has a **Help & support** sidebar item. Players report a _Scam or fraud_, _Bug or error_, _Account problem_, or _Other_ issue, and can track each report's status and the club's reply. A new report notifies every active admin and super admin. Administrators see the **Support inbox** on the same page, can filter by status and category, and can set a report to open, in review, or resolved with an optional reply. Each update notifies the reporter. Every create and update is recorded in the audit log. Submissions are limited to 10 per user per hour. APIs: `POST /api/support/tickets`, `GET /api/support/tickets/mine`, `GET /api/admin/support/tickets?status=&category=`, `PUT /api/admin/support/tickets/:id`.
 
+## Clubs & player-hosted meetups
+
+Any player can **start a club** (up to 5 owned per player) from the **Clubs** sidebar item, or search for and join existing clubs. Joining a club means you are notified whenever it posts a meetup. Club roles:
+
+- **Owner**: edits or deletes the club, makes members hosts, and removes hosts or members. The owner cannot leave their own club; they delete it instead, which requires cancelling its upcoming meetups first.
+- **Host**: posts, edits and cancels the club's meetups, removes regular members, and runs check-in and payments.
+- **Member**: RSVPs and gets notifications.
+
+A **meetup** is an open-play event owned by the club. It opens for registration immediately and reuses the normal RSVP, capacity and waitlist rules, including automatic promotion. Hosts set the title, venue, time, slots, fee, level range, courts and format. Scoring defaults to a single game to 11, win by 2. Editing is blocked if it would push capacity below the confirmed count, exclude players who already joined, or (after matches exist) change the time, courts or format. Every member is notified of a new meetup. Everyone who joined is notified of edits and cancellations. Administrators can manage every club meetup. Running the live queue, teams and scoring remains administrator-only.
+
+**Day-of check-in.** On the event's **Check-in & payments** tab, hosts mark each confirmed player _Here_ or _No-show_. Check-in opens 2 hours before the start time. Players see their record under **My events → Attendance history**. Re-joining a meetup resets attendance.
+
+**Fee tracking.** No payment gateway is involved; money moves outside the app (GCash, Maya, bank or cash). The club's _How players pay you_ text is shown to players who joined a meetup with a fee. Players submit their method and reference number, which notifies the hosts. Hosts then mark each player _Paid_ or _Waived_, or reject the submission so the player can resubmit. The tab shows how much has been collected compared with the expected total and can export the roster as CSV. Every check-in and payment change is audit-logged.
+
+APIs: `GET/POST /api/clubs`, `GET/PUT/DELETE /api/clubs/:id`, `POST/DELETE /api/clubs/:id/join`, `PUT/DELETE /api/clubs/:id/members/:userId`, `POST /api/clubs/:id/meetups`, `PUT /api/clubs/:id/meetups/:eventId`, `POST /api/clubs/:id/meetups/:eventId/cancel`, `GET /api/events/:id/roster`, `PUT /api/events/:id/roster/:userId/attendance`, `PUT /api/events/:id/roster/:userId/payment`, `PUT /api/events/:id/payment`, `GET /api/players/me/attendance`.
+
 ## Installable app (PWA)
 
 CourtSide can be installed on Android, iPhone/iPad, Windows, macOS and ChromeOS. Signed-in users see **Install app** in the sidebar when their browser supports it. On Android and desktop Chrome/Edge it opens the browser's install dialog. On iPhone/iPad it shows the Safari **Share → Add to Home Screen** steps. The installed app opens full-screen with the CourtSide icon and has shortcuts to My Live Session and Explore events.

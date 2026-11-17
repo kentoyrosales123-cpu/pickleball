@@ -11,6 +11,7 @@ import {
   confirm,
   download,
 } from "./api.js";
+import { hostTab, paymentPanel, wirePaymentPanel } from "./clubs.js";
 const teamName = (t) =>
   t?.players?.map((p) => p.fullName || "Player").join(" & ") ||
   "Awaiting advancement";
@@ -159,11 +160,17 @@ export async function eventForm(content, state, id) {
   };
 }
 export async function eventDetail(content, state, id) {
-  const { event } = await api(`/events/${id}`),
-    { events } = await api("/events");
-  const registration = events.find((e) => e._id === id)?.registration;
+  const { event, canManage, club, myRegistration } = await api(`/events/${id}`);
+  const registration =
+    myRegistration?.registrationStatus === "cancelled"
+      ? undefined
+      : myRegistration?.registrationStatus;
   const admin = ["admin", "super-admin"].includes(state.user.role);
-  content.innerHTML = `<div class="page-heading"><div><a href="#/events" class="subtle">← All events</a><div class="mt-3 mb-2"><span class="badge green">${event.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(event.status.replaceAll("-", " "))}</span></div><h1>${esc(event.eventName)}</h1><p>${esc(event.location)} · ${date(event.startDateTime)} · ${time(event.startDateTime)}–${time(event.endDateTime)}</p></div>${admin ? `<a class="btn btn-secondary" href="#/events/${id}/edit">${icon("sliders-horizontal")} Edit event</a>` : ""}</div><div class="event-tabs"><button data-tab="overview" class="active">Overview</button>${admin ? '<button data-tab="participants">Participants</button>' : ""}${admin && event.eventType === "open-play" && event.format === "random" ? '<button data-tab="queue">Live queue</button>' : ""}<button data-tab="teams">Teams</button><button data-tab="rankings">Rankings</button><button data-tab="matches">Matches${event.eventType === "tournament" ? " & bracket" : ""}</button></div><div id="event-content"></div>`;
+  // Club meetups are edited by their hosts through the simpler meetup form.
+  const editLink = event.clubId
+    ? `#/clubs/${event.clubId}/meetups/${id}/edit`
+    : `#/events/${id}/edit`;
+  content.innerHTML = `<div class="page-heading"><div><a href="#/events" class="subtle">← All events</a><div class="mt-3 mb-2"><span class="badge green">${event.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(event.status.replaceAll("-", " "))}</span></div><h1>${esc(event.eventName)}</h1><p>${club ? `Hosted by <a href="#/clubs/${esc(club.id)}">${esc(club.name)}</a> · ` : ""}${esc(event.location)} · ${date(event.startDateTime)} · ${time(event.startDateTime)}–${time(event.endDateTime)}</p></div>${canManage && (admin || event.clubId) ? `<a class="btn btn-secondary" href="${editLink}">${icon("sliders-horizontal")} Edit ${event.clubId ? "meetup" : "event"}</a>` : ""}</div><div class="event-tabs"><button data-tab="overview" class="active">Overview</button>${canManage ? '<button data-tab="host">Check-in & payments</button>' : ""}${admin ? '<button data-tab="participants">Participants</button>' : ""}${admin && event.eventType === "open-play" && event.format === "random" ? '<button data-tab="queue">Live queue</button>' : ""}<button data-tab="teams">Teams</button><button data-tab="rankings">Rankings</button><button data-tab="matches">Matches${event.eventType === "tournament" ? " & bracket" : ""}</button></div><div id="event-content"></div>`;
   const container = document.querySelector("#event-content");
   async function overview() {
     const level = state.user.officialRanking || state.user.provisionalRanking;
@@ -173,7 +180,8 @@ export async function eventDetail(content, state, id) {
       new Date() >= new Date(event.registrationOpen) &&
       new Date() < new Date(event.registrationDeadline);
     const joined = ["confirmed", "waitlisted"].includes(registration);
-    container.innerHTML = `<div class="stats-grid"><div class="stat-card"><div class="stat-top">Player spots</div><div class="stat-value">${event.confirmedCount}<span class="muted fs-6"> / ${event.capacity}</span></div><div class="stat-foot">${event.waitlistEnabled ? "Waiting list enabled" : "Limited capacity"}</div></div><div class="stat-card"><div class="stat-top">Skill levels</div><div class="stat-value">${event.minRanking}–${event.maxRanking}</div><div class="stat-foot">${esc(state.rankings[event.minRanking - 1])} and above</div></div><div class="stat-card"><div class="stat-top">Courts</div><div class="stat-value">${event.courts.length}</div><div class="stat-foot">${event.courts.map(esc).join(", ")}</div></div><div class="stat-card"><div class="stat-top">Registration fee</div><div class="stat-value">${event.fee ? `₱${event.fee.toLocaleString()}` : "Free"}</div><div class="stat-foot">${event.fee ? "Arrange payment with your club" : "Just bring your paddle"}</div></div></div><div class="profile-grid"><div class="panel"><h3>About this event</h3><p class="mt-3" style="white-space:pre-line">${esc(event.description) || "A chance to meet your club on court."}</p><div class="divider"></div><h3>How we’re playing</h3><p class="mt-3">${esc(event.format.replaceAll("-", " "))} · ${event.bestOf === 3 ? "Best of three" : "Single game"} · First to ${event.targetPoints}, win by ${event.winningMargin}</p><p class="subtle">${event.matchDuration} minutes per match · ${esc(event.teamMode)} team assignment</p></div><div class="panel"><h3>${joined ? "You’re on the list." : "Ready to rally?"}</h3><p class="mt-3">Registration closes<br><strong>${date(event.registrationDeadline)} · ${time(event.registrationDeadline)}</strong></p>${joined ? `<span class="badge green">${registration.toUpperCase()}</span><button class="btn btn-secondary d-block mt-4" id="cancel-registration" ${new Date() >= new Date(event.registrationDeadline) || event.finalizedBatch ? "disabled" : ""}>Cancel registration</button>` : `<button class="btn btn-primary" id="register-event" ${!open || !eligible || event.finalizedBatch || (event.confirmedCount >= event.capacity && !event.waitlistEnabled) ? "disabled" : ""}>${event.confirmedCount >= event.capacity ? "Join waiting list" : "Register now"} ${icon("arrow-right")}</button><p class="subtle mt-3">${!eligible ? "Your skill level is outside this event’s range." : !open ? "Registration is not currently open." : "Your place is confirmed when a spot is available."}</p>`}${admin ? `<div class="divider"></div><button class="btn btn-danger btn-sm" id="delete-event">Delete event</button>` : ""}</div></div>`;
+    container.innerHTML = `<div class="stats-grid"><div class="stat-card"><div class="stat-top">Player spots</div><div class="stat-value">${event.confirmedCount}<span class="muted fs-6"> / ${event.capacity}</span></div><div class="stat-foot">${event.waitlistEnabled ? "Waiting list enabled" : "Limited capacity"}</div></div><div class="stat-card"><div class="stat-top">Skill levels</div><div class="stat-value">${event.minRanking}–${event.maxRanking}</div><div class="stat-foot">${esc(state.rankings[event.minRanking - 1])} and above</div></div><div class="stat-card"><div class="stat-top">Courts</div><div class="stat-value">${event.courts.length}</div><div class="stat-foot">${event.courts.map(esc).join(", ")}</div></div><div class="stat-card"><div class="stat-top">Registration fee</div><div class="stat-value">${event.fee ? `₱${event.fee.toLocaleString()}` : "Free"}</div><div class="stat-foot">${event.fee ? (joined ? "Pay using the details on the right" : "Payment details after you join") : "Just bring your paddle"}</div></div></div><div class="profile-grid"><div class="panel"><h3>About this event</h3><p class="mt-3" style="white-space:pre-line">${esc(event.description) || "A chance to meet your club on court."}</p><div class="divider"></div><h3>How we’re playing</h3><p class="mt-3">${esc(event.format.replaceAll("-", " "))} · ${event.bestOf === 3 ? "Best of three" : "Single game"} · First to ${event.targetPoints}, win by ${event.winningMargin}</p><p class="subtle">${event.matchDuration} minutes per match · ${esc(event.teamMode)} team assignment</p></div><div class="panel"><h3>${joined ? "You’re on the list." : "Ready to rally?"}</h3><p class="mt-3">Registration closes<br><strong>${date(event.registrationDeadline)} · ${time(event.registrationDeadline)}</strong></p>${joined ? `<span class="badge green">${registration.toUpperCase()}</span><button class="btn btn-secondary d-block mt-4" id="cancel-registration" ${new Date() >= new Date(event.registrationDeadline) || event.finalizedBatch ? "disabled" : ""}>Cancel registration</button>` : `<button class="btn btn-primary" id="register-event" ${!open || !eligible || event.finalizedBatch || (event.confirmedCount >= event.capacity && !event.waitlistEnabled) ? "disabled" : ""}>${event.confirmedCount >= event.capacity ? "Join waiting list" : "Register now"} ${icon("arrow-right")}</button><p class="subtle mt-3">${!eligible ? "Your skill level is outside this event’s range." : !open ? "Registration is not currently open." : "Your place is confirmed when a spot is available."}</p>`}${joined ? paymentPanel(event, club, myRegistration) : ""}${admin ? `<div class="divider"></div><button class="btn btn-danger btn-sm" id="delete-event">Delete event</button>` : ""}</div></div>`;
+    wirePaymentPanel(container, id, state);
     if (document.querySelector("#register-event"))
       document.querySelector("#register-event").onclick = async () => {
         await api(`/events/${id}/register`, "POST", {});
@@ -700,6 +708,7 @@ export async function eventDetail(content, state, id) {
     participants: participantsTab,
     teams: teamsTab,
     matches: matchesTab,
+    host: () => hostTab(container, state, event),
   };
   state.refreshEvent = async () => {
     if (
@@ -712,6 +721,7 @@ export async function eventDetail(content, state, id) {
     if (tab === "queue") await queueTab();
     else if (tab === "rankings") await rankingsTab();
     else if (tab === "matches") await matchesTab();
+    else if (tab === "host") await tabs.host();
     else if (tab === "teams" && !container.querySelector("#save-teams"))
       await teamsTab();
   };

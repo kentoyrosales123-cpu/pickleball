@@ -151,10 +151,39 @@ const event = new Schema(
     grandFinalReset: { type: Boolean, default: true },
     groupCount: { type: Number, min: 2, max: 8, default: 2 },
     rated: { type: Boolean, default: false },
+    // Set for player-hosted meetups; club owners and hosts may manage them.
+    clubId: ref("Club", false),
   },
   options,
 );
 event.index({ status: 1, startDateTime: 1 });
+event.index({ clubId: 1, startDateTime: 1 });
+export const CLUB_ROLES = ["owner", "host", "member"];
+const club = new Schema(
+  {
+    name: { type: String, required: true, maxlength: 80 },
+    // Lower-cased name, so two clubs cannot share a name differing only by case.
+    nameKey: { type: String, required: true, unique: true },
+    description: { type: String, maxlength: 2000, default: "" },
+    location: { type: String, maxlength: 200, default: "" },
+    // Shown to players who owe a meetup fee, e.g. "GCash 0917… (Juan D.)".
+    paymentInstructions: { type: String, maxlength: 500, default: "" },
+    owner: ref("User"),
+    memberCount: { type: Number, default: 0, min: 0 },
+  },
+  options,
+);
+club.index({ memberCount: -1, name: 1 });
+const clubMember = new Schema(
+  {
+    clubId: ref("Club"),
+    userId: ref("User"),
+    role: { type: String, enum: CLUB_ROLES, default: "member" },
+  },
+  options,
+);
+clubMember.index({ clubId: 1, userId: 1 }, { unique: true });
+clubMember.index({ userId: 1 });
 const registration = new Schema(
   {
     eventId: ref("Event"),
@@ -172,6 +201,27 @@ const registration = new Schema(
     },
     queueReadyAt: { type: Date, default: null },
     waitlistPosition: Number,
+    // Day-of attendance, recorded by the host.
+    attendance: {
+      type: String,
+      enum: ["pending", "present", "no-show"],
+      default: "pending",
+    },
+    checkedInAt: { type: Date, default: null },
+    // Fee tracking. The club collects money outside the app; players submit
+    // a reference (e.g. GCash ref no.) and the host confirms it.
+    paymentStatus: {
+      type: String,
+      enum: ["unpaid", "submitted", "paid", "waived"],
+      default: "unpaid",
+    },
+    paymentMethod: {
+      type: String,
+      enum: ["gcash", "maya", "bank", "cash", "other"],
+    },
+    paymentReference: { type: String, maxlength: 100 },
+    paymentSubmittedAt: Date,
+    paidAt: Date,
   },
   options,
 );
@@ -309,6 +359,37 @@ const supportTicket = new Schema(
 );
 supportTicket.index({ userId: 1, createdAt: -1 });
 supportTicket.index({ status: 1, createdAt: -1 });
+// One document per pair of players. pairKey is the two ids sorted and joined,
+// so A→B and B→A can never both exist.
+export const pairKey = (a, b) => [String(a), String(b)].sort().join(":");
+const friendship = new Schema(
+  {
+    pairKey: { type: String, required: true, unique: true },
+    requester: ref("User"),
+    recipient: ref("User"),
+    status: {
+      type: String,
+      enum: ["pending", "accepted"],
+      default: "pending",
+    },
+    acceptedAt: Date,
+  },
+  options,
+);
+friendship.index({ requester: 1, status: 1 });
+friendship.index({ recipient: 1, status: 1 });
+const message = new Schema(
+  {
+    pairKey: { type: String, required: true },
+    from: ref("User"),
+    to: ref("User"),
+    body: { type: String, required: true, maxlength: 2000 },
+    readAt: { type: Date, default: null },
+  },
+  options,
+);
+message.index({ pairKey: 1, _id: -1 });
+message.index({ to: 1, readAt: 1 });
 const audit = new Schema(
   {
     actorId: ref("User"),
@@ -463,6 +544,10 @@ export const PlayerRankingHistory = mongoose.model(
 );
 export const Notification = mongoose.model("Notification", notification);
 export const SupportTicket = mongoose.model("SupportTicket", supportTicket);
+export const Friendship = mongoose.model("Friendship", friendship);
+export const Message = mongoose.model("Message", message);
+export const Club = mongoose.model("Club", club);
+export const ClubMember = mongoose.model("ClubMember", clubMember);
 export const AuditLog = mongoose.model("AuditLog", audit);
 export const ActionToken = mongoose.model("ActionToken", token);
 export const Settings = mongoose.model("Settings", settings);

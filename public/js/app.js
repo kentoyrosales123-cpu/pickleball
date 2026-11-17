@@ -17,6 +17,8 @@ import {
 } from "./api.js";
 import { eventDetail, eventForm } from "./events.js";
 import { supportPage } from "./support.js";
+import { friendsPage, messagesPage } from "./social.js";
+import { clubsPage, clubPage, meetupForm, attendanceHistory } from "./clubs.js";
 import { themeToggle, mountThemeToggles, cssVar } from "./theme.js";
 import { registerPWA, mountInstallButton } from "./pwa.js";
 registerPWA();
@@ -41,6 +43,7 @@ const state = {
   render,
   toast,
   confirm,
+  eventCard,
 };
 const brand = `<a class="brand" href="#/"> <span class="brand-mark">${icon("orbit")}</span><span>CourtSide<small>PICKLEBALL CLUB</small></span></a>`;
 const rankLabel = (u) =>
@@ -57,7 +60,7 @@ function stat(label, value, symbol, foot) {
 }
 export function eventCard(e) {
   const d = new Date(e.startDateTime);
-  return `<article class="event-card"><div class="event-visual ${e.eventType}"><div class="date-chip"><small>${d.toLocaleDateString(undefined, { month: "short" }).toUpperCase()}</small><strong>${d.getDate()}</strong></div></div><div class="event-body"><span class="badge ${e.eventType === "tournament" ? "blue" : "green"}">${e.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(e.registration || e.status.replaceAll("-", " "))}</span><h3>${esc(e.eventName)}</h3><div class="event-meta">${icon("map-pin")}${esc(e.location)}</div><div class="event-meta">${icon("clock")}${date(e.startDateTime)} · ${time(e.startDateTime)}–${time(e.endDateTime)}</div><div class="event-meta">${icon("bar-chart-3")}Levels ${e.minRanking}–${e.maxRanking}</div><div class="capacity-track"><span style="width:${Math.min(100, (e.confirmedCount / e.capacity) * 100)}%"></span></div><div class="d-flex justify-content-between subtle"><span>${e.confirmedCount} / ${e.capacity} players</span><span>${Math.max(0, e.capacity - e.confirmedCount)} spots left</span></div><div class="event-bottom"><small>${e.fee ? `₱${e.fee.toLocaleString()}` : "Free to play"}<br>Closes ${date(e.registrationDeadline)}</small><a class="btn btn-secondary btn-sm" href="${user ? `#/events/${e._id}` : "#/login"}">View event ${icon("arrow-up-right")}</a></div></div></article>`;
+  return `<article class="event-card"><div class="event-visual ${e.eventType}"><div class="date-chip"><small>${d.toLocaleDateString(undefined, { month: "short" }).toUpperCase()}</small><strong>${d.getDate()}</strong></div></div><div class="event-body"><span class="badge ${e.eventType === "tournament" ? "blue" : "green"}">${e.eventType === "tournament" ? "TOURNAMENT" : "OPEN PLAY"}</span> <span class="badge">${esc(e.registration || e.status.replaceAll("-", " "))}</span><h3>${esc(e.eventName)}</h3>${e.clubId?.name ? `<div class="event-meta">${icon("users")}Hosted by ${esc(e.clubId.name)}</div>` : ""}<div class="event-meta">${icon("map-pin")}${esc(e.location)}</div><div class="event-meta">${icon("clock")}${date(e.startDateTime)} · ${time(e.startDateTime)}–${time(e.endDateTime)}</div><div class="event-meta">${icon("bar-chart-3")}Levels ${e.minRanking}–${e.maxRanking}</div><div class="capacity-track"><span style="width:${Math.min(100, (e.confirmedCount / e.capacity) * 100)}%"></span></div><div class="d-flex justify-content-between subtle"><span>${e.confirmedCount} / ${e.capacity} players</span><span>${Math.max(0, e.capacity - e.confirmedCount)} spots left</span></div><div class="event-bottom"><small>${e.fee ? `₱${e.fee.toLocaleString()}` : "Free to play"}<br>Closes ${date(e.registrationDeadline)}</small><a class="btn btn-secondary btn-sm" href="${user ? `#/events/${e._id}` : "#/login"}">View event ${icon("arrow-up-right")}</a></div></div></article>`;
 }
 function shell(route) {
   const admin = ["admin", "super-admin"].includes(user.role);
@@ -79,21 +82,27 @@ function shell(route) {
         ...(user.role === "super-admin"
           ? [["settings", "settings-2", "Settings"]]
           : []),
+        ["clubs", "shield", "Clubs"],
+        ["friends", "user-plus", "Friends"],
+        ["messages", "message-circle", "Messages"],
         ["support", "life-buoy", "Support inbox"],
       ]
     : [
         ["dashboard", "layout-dashboard", "Overview"],
         ["events", "calendar-days", "Explore events"],
+        ["clubs", "shield", "Clubs"],
         ["my-events", "ticket", "My events"],
         ["live-session", "activity", "My Live Session"],
         ["history", "swords", "Match history"],
         ["ranking", "star", "Ranked clubhouse"],
         ["leaderboard", "medal", "Leaderboard"],
         ["statistics", "chart-no-axes-combined", "My statistics"],
+        ["friends", "user-plus", "Friends"],
+        ["messages", "message-circle", "Messages"],
         ["profile", "user-round", "My profile"],
         ["support", "life-buoy", "Help & support"],
       ];
-  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><div id="install-slot"></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions">${themeToggle()}<span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
+  app.innerHTML = `<aside class="sidebar">${brand}<div class="nav-label">${admin ? "CLUB MANAGEMENT" : "YOUR CLUBHOUSE"}</div><nav>${items.map(([path, i, label]) => `<a href="#/${path}" class="${route === path ? "active" : ""}">${icon(i)}${label}${path === "messages" ? '<span class="nav-count" id="unread-count" hidden></span>' : ""}</a>`).join("")}</nav><div class="sidebar-bottom"><div class="club-note">${icon("zap")}<strong>Better together.</strong><p>A good match starts with a great community. See you on court.</p></div><div id="install-slot"></div><a href="#/profile" class="d-block mb-3">${icon("circle-user")} Account</a><button class="icon-button text-light" id="logout">${icon("log-out")} Sign out</button></div></aside><div class="shell"><header class="topbar"><button class="icon-button mobile-toggle" id="menu" aria-label="Toggle navigation">${icon("menu")}</button><div class="search-label">${icon("sun")} A good day to get on court</div><div class="top-actions">${themeToggle()}<span class="badge green">${user.role === "super-admin" ? "SUPER ADMIN" : admin ? "ADMIN" : "PLAYER"}</span><a href="#/notifications" class="icon-button" aria-label="Notifications">${icon("bell")}</a><a href="#/profile" class="top-user">${avatar(user)}<span><strong>${esc(user.fullName)}</strong><small>${esc(rankLabel(user))}</small></span></a></div></header><main class="main" id="content"><div class="loading">Loading your clubhouse…</div></main></div>`;
   document.querySelector("#logout").onclick = async () => {
     await api("/auth/logout", "POST", {});
     user = null;
@@ -374,7 +383,12 @@ async function eventsPage(content, route) {
         ? '<a class="btn btn-primary" href="#/events/new">+ Create event</a>'
         : "",
     ) +
-    `<div class="filters"><input id="event-search" class="form-control" placeholder="Search events or venues" aria-label="Search events"><select class="form-select" id="event-filter" aria-label="Filter event status"><option value="">All statuses</option>${["registration-open", "registration-closed", "ongoing", "completed", "cancelled", "draft"].map((s) => `<option>${s}</option>`).join("")}</select></div><div class="events-grid" id="event-list"></div>`;
+    `<div class="filters"><input id="event-search" class="form-control" placeholder="Search events or venues" aria-label="Search events"><select class="form-select" id="event-filter" aria-label="Filter event status"><option value="">All statuses</option>${["registration-open", "registration-closed", "ongoing", "completed", "cancelled", "draft"].map((s) => `<option>${s}</option>`).join("")}</select></div><div class="events-grid" id="event-list"></div>${route === "my-events" ? '<div id="attendance-history"></div>' : ""}`;
+  if (route === "my-events")
+    attendanceHistory(document.querySelector("#attendance-history")).then(
+      () => lucide.createIcons(),
+      () => {},
+    );
   const draw = () => {
     const term = document.querySelector("#event-search").value.toLowerCase(),
       status = document.querySelector("#event-filter").value;
@@ -769,6 +783,8 @@ async function render() {
   state.cleanupRanking = null;
   state.cleanupLiveSession?.();
   state.cleanupLiveSession = null;
+  state.cleanupSocial?.();
+  state.cleanupSocial = null;
   charts.forEach((c) => c.destroy());
   charts = [];
   try {
@@ -785,6 +801,7 @@ async function render() {
       }
       const active = route || "dashboard";
       shell(active);
+      refreshUnread();
       const content = document.querySelector("#content");
       if (active === "events" && parts[1] === "new")
         await eventForm(content, state);
@@ -817,6 +834,25 @@ async function render() {
         await settings(content);
       else if (active === "notifications") await notifications(content);
       else if (active === "support") await supportPage(content, user, heading);
+      else if (active === "clubs" && parts[1] && parts[2] === "meetups")
+        await meetupForm(
+          content,
+          state,
+          parts[1],
+          parts[3] !== "new" ? parts[3] : undefined,
+        );
+      else if (active === "clubs" && parts[1])
+        await clubPage(content, state, heading, parts[1]);
+      else if (active === "clubs") await clubsPage(content, state, heading);
+      else if (active === "friends")
+        state.cleanupSocial = await friendsPage(content, state, heading);
+      else if (active === "messages")
+        state.cleanupSocial = await messagesPage(
+          content,
+          state,
+          heading,
+          /^[a-f\d]{24}$/i.test(parts[1] || "") ? parts[1] : undefined,
+        );
       else await dashboard(content);
     }
     mountThemeToggles(() => {
@@ -860,6 +896,19 @@ async function refreshNotifications(showNew = false) {
     if (err.status !== 401) console.warn("Could not refresh notifications");
   }
 }
+async function refreshUnread() {
+  try {
+    const { count } = await api("/messages/unread");
+    const el = document.querySelector("#unread-count");
+    if (!el) return;
+    el.hidden = !count;
+    el.textContent = count > 99 ? "99+" : count;
+    el.setAttribute("aria-label", `${count} unread`);
+  } catch (err) {
+    if (err.status !== 401) console.warn("Could not refresh messages");
+  }
+}
+state.refreshUnread = refreshUnread;
 function connectSocket() {
   if (!window.io || socket?.connected) return;
   socket = io();
@@ -876,8 +925,19 @@ function connectSocket() {
         `${result.rankPromoted ? "Promoted" : "Demoted"} to ${result.rankTier} ${result.rankDivision || ""}`;
   });
   refreshNotifications();
+  refreshUnread();
+  socket.on("message", (m) => {
+    const shown = state.onMessage?.(m);
+    if (m.from === user?.id) return;
+    if (!state.onMessage) refreshUnread();
+    if (!shown && !Swal.isVisible())
+      toast(`New message from ${m.sender?.fullName || "a friend"}`);
+  });
+  socket.on("message:read", (r) => state.onMessageRead?.(r));
   socket.on("refresh", () => {
     refreshNotifications(true);
+    refreshUnread();
+    state.refreshFriends?.();
     state.refreshEvent?.();
     state.refreshLiveSession?.();
     document.querySelector("#announcer").textContent =

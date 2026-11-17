@@ -103,6 +103,8 @@ export async function registerPlayer(eventId, userId, actor, cancel = false) {
         registeredAt: now,
         queueStatus: "not-checked-in",
         queueReadyAt: null,
+        attendance: "pending",
+        checkedInAt: null,
         waitlistPosition: full
           ? (await EventRegistration.countDocuments({
               eventId,

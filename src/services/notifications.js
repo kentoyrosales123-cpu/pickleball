@@ -31,6 +31,11 @@ export function publish() {
 export function publishTo(userIds) {
   for (const id of new Set(userIds.map(String))) io?.to(id).emit("refresh");
 }
+// Sends a socket event to each given user's open clients (e.g. chat messages).
+export function emitTo(userIds, event, payload) {
+  for (const id of new Set(userIds.map(String)))
+    io?.to(id).emit(event, payload);
+}
 // Called only after the surrounding result transaction has committed.
 export async function publishRankingResult(matchId) {
   if (!io) return;

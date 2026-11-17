@@ -23,6 +23,21 @@ import {
   ticketSchema,
   ticketUpdateSchema,
 } from "../controllers/support.js";
+import {
+  socialController as social,
+  friendRequestSchema,
+  friendResponseSchema,
+  messageSchema,
+} from "../controllers/social.js";
+import {
+  clubController as clubs,
+  clubSchema,
+  memberRoleSchema,
+  meetupSchema,
+  attendanceSchema,
+  paymentStatusSchema,
+  paymentSubmitSchema,
+} from "../controllers/clubs.js";
 import { Settings, RANKINGS } from "../models/index.js";
 import {
   ratingController as ratings,
@@ -150,6 +165,83 @@ export function api(config) {
     admin,
     validate(ticketUpdateSchema),
     support.update,
+  );
+  const messageLimit = rateLimit({
+    windowMs: 60_000,
+    limit: config.NODE_ENV === "test" ? 1000 : 30,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: {
+      message: "You’re sending messages too quickly. Please wait a moment.",
+    },
+  });
+  r.get("/players/search", social.search);
+  r.get("/friends", social.friends);
+  r.post("/friends/requests", validate(friendRequestSchema), social.request);
+  r.put(
+    "/friends/requests/:id",
+    validate(friendResponseSchema),
+    social.respond,
+  );
+  r.delete("/friends/:userId", social.remove);
+  r.get("/messages", social.conversations);
+  r.get("/messages/unread", social.unread);
+  r.get("/messages/:userId", social.thread);
+  r.post(
+    "/messages/:userId",
+    messageLimit,
+    validate(messageSchema),
+    social.send,
+  );
+  r.put("/messages/:userId/read", social.markRead);
+  const clubLimit = rateLimit({
+    windowMs: 60 * 60_000,
+    limit: config.NODE_ENV === "test" ? 1000 : 30,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { message: "Too many club changes. Please try again later." },
+  });
+  r.get("/clubs", clubs.list);
+  r.post("/clubs", clubLimit, validate(clubSchema), clubs.create);
+  r.get("/clubs/:id", clubs.detail);
+  r.put("/clubs/:id", validate(clubSchema), clubs.update);
+  r.delete("/clubs/:id", clubs.remove);
+  r.post("/clubs/:id/join", clubs.join);
+  r.delete("/clubs/:id/join", clubs.leave);
+  r.put(
+    "/clubs/:id/members/:userId",
+    validate(memberRoleSchema),
+    clubs.setRole,
+  );
+  r.delete("/clubs/:id/members/:userId", clubs.removeMember);
+  r.post(
+    "/clubs/:id/meetups",
+    clubLimit,
+    validate(meetupSchema),
+    clubs.createMeetup,
+  );
+  r.put(
+    "/clubs/:id/meetups/:eventId",
+    validate(meetupSchema),
+    clubs.updateMeetup,
+  );
+  r.post("/clubs/:id/meetups/:eventId/cancel", clubs.cancelMeetup);
+  r.get("/players/me/attendance", clubs.myAttendance);
+  r.get("/events/:id/roster", clubs.roster);
+  r.put(
+    "/events/:id/roster/:userId/attendance",
+    validate(attendanceSchema),
+    clubs.setAttendance,
+  );
+  r.put(
+    "/events/:id/roster/:userId/payment",
+    validate(paymentStatusSchema),
+    clubs.setPayment,
+  );
+  r.put(
+    "/events/:id/payment",
+    validate(paymentSubmitSchema),
+    clubs.submitPayment,
   );
   r.get("/players/me/stats", p.stats);
   r.get("/players/me/live-sessions", queue.mine);
