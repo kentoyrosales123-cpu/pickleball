@@ -2,6 +2,10 @@ services:
   - type: web
     name: courtside-pickleball
     runtime: node
+    # Paid plan keeps the server awake for Socket.IO and reminder timers.
+    plan: starter
+    # Closest Render region to players in the Philippines.
+    region: singapore
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /health

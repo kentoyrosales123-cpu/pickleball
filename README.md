@@ -184,7 +184,7 @@ The DOM test checks controls and server-backed workflows; it does not measure vi
 
 1. Create a private GitHub repository and push this directory, excluding `.env`, `node_modules`, and `.cache`. Review `git status` before committing credentials or any local files.
 2. Provision the first administrator against the intended Atlas database from a trusted development environment using `create-admin`. Do not seed sample accounts into a live club database.
-3. Connect the GitHub repository to Render and select the included Blueprint, or configure a Node web service with `npm ci --omit=dev` and `npm start`.
+3. Connect the GitHub repository to Render and select the included Blueprint, or configure a Node web service with `npm ci --omit=dev` and `npm start`. The Blueprint uses the paid **Starter** plan in the **Singapore** region. The free plan sleeps when idle, which drops live Socket.IO updates and pauses reminder emails. Render cannot move an existing service to another region, so a service already created elsewhere must be recreated in Singapore. Create the Atlas cluster in AWS Singapore (`ap-southeast-1`) as well, to keep database round trips short.
 4. Set `MONGODB_URI`, `APP_URL` to the final HTTPS Render URL, the SMTP settings, and a strong `JWT_SECRET`. Render Blueprint generates the JWT secret. Use the Render-provided `PORT`.
 5. Configure Atlas network access for the Render service. Deploy, check `/health`, sign in, and verify an email round trip before opening registration.
 6. Confirm Atlas backups, indexes, TLS, and club-data retention settings appropriate to your operations. The checked-in Render configuration does not provision an Atlas account or send production email automatically.
