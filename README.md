@@ -82,7 +82,11 @@ Any player can **start a club** (up to 5 owned per player) from the **Clubs** si
 
 A **meetup** is an open-play event owned by the club. It opens for registration immediately and reuses the normal RSVP, capacity and waitlist rules, including automatic promotion. Hosts set the title, venue, time, slots, fee, level range, courts and format. Scoring defaults to a single game to 11, win by 2. Editing is blocked if it would push capacity below the confirmed count, exclude players who already joined, or (after matches exist) change the time, courts or format. Every member is notified of a new meetup. Everyone who joined is notified of edits and cancellations. Administrators can manage every club meetup. Running the live queue, teams and scoring remains administrator-only.
 
-**Day-of check-in.** On the event's **Check-in & payments** tab, hosts mark each confirmed player _Here_ or _No-show_. Check-in opens 2 hours before the start time. Players see their record under **My events → Attendance history**. Re-joining a meetup resets attendance.
+**Day-of check-in.** On the event's **Check-in & payments** tab, hosts mark each confirmed player _Here_ or _No-show_. Check-in opens 2 hours before the start time.
+
+**QR check-in.** Instead of tapping each name, a host can press **Check-in QR** on the same tab and show the code on a phone or tablet at the venue. Players scan it with their phone camera, sign in if needed, and are marked present (the roster shows "scanned QR"). It works only for confirmed players, from 2 hours before the start until the event ends. **New code** replaces the code, so any old screenshot stops working. The code is never included in event data sent to players.
+
+Players see their record under **My events → Attendance history**. Re-joining a meetup resets attendance.
 
 **Fee tracking.** No payment gateway is involved; money moves outside the app (GCash, Maya, bank or cash). The club's _How players pay you_ text is shown to players who joined a meetup with a fee. Players submit their method and reference number, which notifies the hosts. Hosts then mark each player _Paid_ or _Waived_, or reject the submission so the player can resubmit. The tab shows how much has been collected compared with the expected total and can export the roster as CSV. Every check-in and payment change is audit-logged.
 

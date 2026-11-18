@@ -18,7 +18,13 @@ import {
 import { eventDetail, eventForm } from "./events.js";
 import { supportPage } from "./support.js";
 import { friendsPage, messagesPage } from "./social.js";
-import { clubsPage, clubPage, meetupForm, attendanceHistory } from "./clubs.js";
+import {
+  clubsPage,
+  clubPage,
+  meetupForm,
+  attendanceHistory,
+  checkInPage,
+} from "./clubs.js";
 import { themeToggle, mountThemeToggles, cssVar } from "./theme.js";
 import { registerPWA, mountInstallButton } from "./pwa.js";
 registerPWA();
@@ -218,7 +224,10 @@ function authPage(mode) {
         const result = await api(`/auth/${mode}`, "POST", data);
         user = result.user;
         connectSocket();
-        location.hash = "#/dashboard";
+        // Finish a QR check-in that was interrupted by signing in.
+        const pending = sessionStorage.getItem("pendingCheckin");
+        sessionStorage.removeItem("pendingCheckin");
+        location.hash = pending || "#/dashboard";
       }
     } catch (error) {
       document.querySelector("#auth-error").innerHTML =
@@ -792,7 +801,13 @@ async function render() {
     const parts = (location.hash.replace(/^#\/?/, "") || "").split("/"),
       route = parts[0];
     if (!user) {
-      if (["login", "register", "forgot", "reset"].includes(route))
+      if (route === "checkin" && parts[2]) {
+        // Scanned the venue QR code while signed out: sign in, then resume.
+        sessionStorage.setItem("pendingCheckin", location.hash);
+        history.replaceState(null, "", "#/login");
+        authPage("login");
+        toast("Sign in to check in");
+      } else if (["login", "register", "forgot", "reset"].includes(route))
         authPage(route);
       else await landing();
     } else {
@@ -833,6 +848,8 @@ async function render() {
       else if (active === "settings" && user.role === "super-admin")
         await settings(content);
       else if (active === "notifications") await notifications(content);
+      else if (active === "checkin")
+        await checkInPage(content, parts[1], parts[2]);
       else if (active === "support") await supportPage(content, user, heading);
       else if (active === "clubs" && parts[1] && parts[2] === "meetups")
         await meetupForm(

@@ -1,4 +1,6 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import mongoose from "mongoose";
+import QRCode from "qrcode";
 import { z } from "zod";
 import {
   Club,
@@ -83,6 +85,9 @@ export const meetupSchema = z
 export const attendanceSchema = z.object({
   attendance: z.enum(["pending", "present", "no-show"]),
 });
+export const selfCheckInSchema = z.object({
+  code: z.string().trim().min(1).max(64),
+});
 export const paymentStatusSchema = z.object({
   paymentStatus: z.enum(["unpaid", "submitted", "paid", "waived"]),
 });
@@ -132,6 +137,46 @@ async function managedEvent(id, user, session) {
   );
   return event;
 }
+// Check-in runs from 2 hours before the start until the event ends.
+const CHECK_IN_LEAD = 2 * 3600_000;
+const checkInWindow = (event) => ({
+  opensAt: new Date(+event.startDateTime - CHECK_IN_LEAD),
+  closesAt: new Date(event.endDateTime),
+});
+const sameCode = (a, b) => {
+  const x = Buffer.from(String(a)),
+    y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+// Everyone who can see this event's host tab, so their roster refreshes.
+async function managerIds(event) {
+  const [members, admins] = await Promise.all([
+    event.clubId
+      ? ClubMember.find({
+          clubId: event.clubId,
+          role: { $in: ["owner", "host"] },
+        }).distinct("userId")
+      : [],
+    User.find({ role: { $in: ["admin", "super-admin"] } }).distinct("_id"),
+  ]);
+  return [...members, ...admins];
+}
+// Returns the event's check-in code, creating it once (or replacing it when
+// rotating) without letting two concurrent requests pick different codes.
+async function checkInCode(eventId, rotate) {
+  if (rotate)
+    await Event.updateOne(
+      { _id: eventId },
+      { $set: { checkInCode: randomBytes(16).toString("base64url") } },
+    );
+  else
+    await Event.updateOne(
+      { _id: eventId, checkInCode: null },
+      { $set: { checkInCode: randomBytes(16).toString("base64url") } },
+    );
+  const event = await Event.findById(eventId).select("+checkInCode").lean();
+  return event.checkInCode;
+}
 const clubView = (c, myRole = null) => ({
   id: String(c._id),
   name: c.name,
@@ -151,6 +196,7 @@ const rosterView = (r) => ({
   registeredAt: r.registeredAt,
   attendance: r.attendance || "pending",
   checkedInAt: r.checkedInAt,
+  checkInMethod: r.checkInMethod,
   paymentStatus: r.paymentStatus || "unpaid",
   paymentMethod: r.paymentMethod,
   paymentReference: r.paymentReference,
@@ -656,8 +702,12 @@ export const clubController = {
     );
     const before = registration.attendance;
     registration.attendance = req.body.attendance;
-    registration.checkedInAt =
-      req.body.attendance === "present" ? new Date() : null;
+    const present = req.body.attendance === "present";
+    // Keep the original time and method when a QR check-in is re-confirmed.
+    if (!present || before !== "present") {
+      registration.checkedInAt = present ? new Date() : null;
+      registration.checkInMethod = present ? "host" : undefined;
+    }
     await registration.save();
     await audit(
       req.user._id,
@@ -669,6 +719,94 @@ export const clubController = {
     );
     publishTo([registration.userId]);
     res.json({ registration: rosterView(registration) });
+  },
+  // Host: the venue QR code. POST replaces the code, so screenshots of the
+  // old one (e.g. shared with someone who isn't there) stop working.
+  checkInQr: (config) => async (req, res) => {
+    const event = await managedEvent(req.params.id, req.user);
+    ensure(event.status !== "cancelled", "This event was cancelled", 409);
+    const rotate = req.method === "POST";
+    const code = await checkInCode(event._id, rotate);
+    if (rotate)
+      await audit(
+        req.user._id,
+        "rotate-check-in-code",
+        "Event",
+        event._id,
+        null,
+        null,
+      );
+    const url = `${config.APP_URL}/#/checkin/${event._id}/${code}`;
+    const svg = await QRCode.toString(url, {
+      type: "svg",
+      margin: 1,
+      errorCorrectionLevel: "M",
+    });
+    res.json({ url, svg, ...checkInWindow(event) });
+  },
+  // Player: scanned the venue QR code.
+  selfCheckIn: async (req, res) => {
+    const event = await Event.findById(
+      objectId(req.params.id, "Event not found"),
+    ).select("+checkInCode");
+    ensure(event, "Event not found", 404);
+    ensure(
+      event.checkInCode && sameCode(event.checkInCode, req.body.code),
+      "This check-in code is no longer valid. Scan the QR code the host is showing now.",
+      400,
+    );
+    ensure(event.status !== "cancelled", "This event was cancelled", 409);
+    const { opensAt, closesAt } = checkInWindow(event);
+    ensure(
+      Date.now() >= +opensAt,
+      "Check-in opens 2 hours before the event starts",
+      409,
+    );
+    ensure(Date.now() <= +closesAt, "Check-in for this event has closed", 409);
+    const registration = await EventRegistration.findOne({
+      eventId: event._id,
+      userId: req.user._id,
+    });
+    ensure(
+      registration?.registrationStatus !== "waitlisted",
+      "You’re still on the waitlist. Please see the host.",
+      403,
+    );
+    ensure(
+      registration?.registrationStatus === "confirmed",
+      "You’re not registered for this event. Please see the host.",
+      403,
+    );
+    const already = registration.attendance === "present";
+    if (!already) {
+      const before = registration.attendance;
+      registration.attendance = "present";
+      registration.checkedInAt = new Date();
+      registration.checkInMethod = "qr";
+      await registration.save();
+      await audit(
+        req.user._id,
+        "self-check-in",
+        "EventRegistration",
+        registration._id,
+        { attendance: before },
+        { attendance: "present" },
+      );
+      publishTo([req.user._id, ...(await managerIds(event))]);
+    }
+    res.json({
+      message: already
+        ? "You’re already checked in"
+        : "You’re checked in. Enjoy your games!",
+      alreadyCheckedIn: already,
+      event: {
+        id: String(event._id),
+        eventName: event.eventName,
+        location: event.location,
+        startDateTime: event.startDateTime,
+      },
+      checkedInAt: registration.checkedInAt,
+    });
   },
   setPayment: async (req, res) => {
     const event = await managedEvent(req.params.id, req.user);

@@ -8,6 +8,7 @@ import {
   clubPage,
   meetupForm,
   attendanceHistory,
+  checkInPage,
 } from "../public/js/clubs.js";
 
 const player = (id, fullName) => ({
@@ -284,4 +285,30 @@ test("attendance history summarises shows and no-shows", async (t) => {
   assert.match(container.textContent, /3 of 4 recorded games \(75%\)/);
   assert.match(container.textContent, /1 no-show/);
   assert.match(container.textContent, /Free/);
+});
+
+test("QR check-in page checks the player in and hides the code from the URL", async (t) => {
+  const { container, calls } = setup(t, {
+    "POST /api/events/e1/checkin": () => ({
+      message: "You’re checked in. Enjoy your games!",
+      alreadyCheckedIn: false,
+      event: {
+        id: "e1",
+        eventName: "Night <Dinks>",
+        location: "Matina",
+        startDateTime: new Date().toISOString(),
+      },
+      checkedInAt: new Date().toISOString(),
+    }),
+  });
+  const prevHistory = globalThis.history;
+  t.after(() => (globalThis.history = prevHistory));
+  const replaced = [];
+  globalThis.history = { replaceState: (s, title, url) => replaced.push(url) };
+  await checkInPage(container, "e1", "secret-code");
+  assert.deepEqual(replaced, ["#/checkin/e1"]);
+  assert.deepEqual(calls[0].body, { code: "secret-code" });
+  assert.match(container.textContent, /checked in/);
+  assert.match(container.innerHTML, /Night &lt;Dinks&gt;/);
+  assert.ok(container.querySelector('a[href="#/events/e1"]'));
 });

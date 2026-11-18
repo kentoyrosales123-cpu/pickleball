@@ -208,6 +208,7 @@ export const eventController = {
       myRegistration: mine && {
         registrationStatus: mine.registrationStatus,
         attendance: mine.attendance || "pending",
+        checkedInAt: mine.checkedInAt,
         paymentStatus: mine.paymentStatus || "unpaid",
         paymentMethod: mine.paymentMethod,
         paymentReference: mine.paymentReference,

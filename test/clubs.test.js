@@ -283,6 +283,103 @@ test("check-in is not available days ahead; re-joining resets attendance", async
   assert.equal(row.attendance, "pending");
 });
 
+test("players check themselves in by scanning the host's QR code", async () => {
+  const created = await call(
+    "post",
+    `/clubs/${clubId}/meetups`,
+    host,
+    meetup(),
+  );
+  const id = created.body.event._id;
+  await call("post", `/events/${id}/register`, member, {});
+  await call("post", `/events/${id}/register`, owner, {});
+
+  assert.equal(
+    (await call("get", `/events/${id}/checkin-qr`, member)).status,
+    403,
+  );
+  const qr = await call("get", `/events/${id}/checkin-qr`, host);
+  assert.equal(qr.status, 200);
+  assert.match(qr.body.svg, /^<svg/);
+  const [, code] = qr.body.url.match(
+    new RegExp(`^http://localhost:3000/#/checkin/${id}/([A-Za-z0-9_-]+)$`),
+  );
+  const again = await call("get", `/events/${id}/checkin-qr`, owner);
+  assert.equal(again.body.url, qr.body.url, "the code is stable until rotated");
+
+  const detail = await call("get", `/events/${id}`, member);
+  assert.ok(!JSON.stringify(detail.body).includes(code), "code never leaks");
+
+  const wrong = await call("post", `/events/${id}/checkin`, member, {
+    code: "not-the-code",
+  });
+  assert.equal(wrong.status, 400);
+  const stranger = await call("post", `/events/${id}/checkin`, outsider, {
+    code,
+  });
+  assert.equal(stranger.status, 403);
+
+  const ok = await call("post", `/events/${id}/checkin`, member, { code });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.alreadyCheckedIn, false);
+  assert.equal(ok.body.event.eventName, "Tuesday Night Dinks");
+  const twice = await call("post", `/events/${id}/checkin`, member, { code });
+  assert.equal(twice.body.alreadyCheckedIn, true);
+  assert.equal(twice.body.checkedInAt, ok.body.checkedInAt);
+
+  const roster = await call("get", `/events/${id}/roster`, host);
+  const row = roster.body.roster.find(
+    (r) => r.player.id === String(member._id),
+  );
+  assert.equal(row.attendance, "present");
+  assert.equal(row.checkInMethod, "qr");
+  assert.equal(roster.body.summary.present, 1);
+  const mine = await call("get", `/events/${id}`, member);
+  assert.ok(mine.body.myRegistration.checkedInAt);
+
+  // A new code invalidates the old one, e.g. a screenshot shared off-site.
+  const rotated = await call("post", `/events/${id}/checkin-qr`, host);
+  assert.notEqual(rotated.body.url, qr.body.url);
+  const stale = await call("post", `/events/${id}/checkin`, owner, { code });
+  assert.equal(stale.status, 400);
+  const fresh = rotated.body.url.split("/").pop();
+  assert.equal(
+    (await call("post", `/events/${id}/checkin`, owner, { code: fresh }))
+      .status,
+    200,
+  );
+
+  // Outside the window: before 2 hours ahead, and after the end.
+  await Event.updateOne(
+    { _id: id },
+    {
+      startDateTime: new Date(Date.now() + 48 * 3600_000),
+      endDateTime: new Date(Date.now() + 50 * 3600_000),
+    },
+  );
+  await EventRegistration.updateOne(
+    { eventId: id, userId: member._id },
+    { attendance: "pending" },
+  );
+  const early = await call("post", `/events/${id}/checkin`, member, {
+    code: fresh,
+  });
+  assert.equal(early.status, 409);
+  assert.match(early.body.message, /opens/);
+  await Event.updateOne(
+    { _id: id },
+    {
+      startDateTime: new Date(Date.now() - 3 * 3600_000),
+      endDateTime: new Date(Date.now() - 60_000),
+    },
+  );
+  const late = await call("post", `/events/${id}/checkin`, member, {
+    code: fresh,
+  });
+  assert.equal(late.status, 409);
+  assert.match(late.body.message, /closed/);
+});
+
 test("hosts edit and cancel meetups; club deletion waits for cancellations", async () => {
   const later = await call(
     "post",

@@ -153,6 +153,9 @@ const event = new Schema(
     rated: { type: Boolean, default: false },
     // Set for player-hosted meetups; club owners and hosts may manage them.
     clubId: ref("Club", false),
+    // Secret in the venue QR code players scan to check themselves in.
+    // Never sent with the event; hosts fetch it through the check-in QR route.
+    checkInCode: { type: String, select: false },
   },
   options,
 );
@@ -201,13 +204,15 @@ const registration = new Schema(
     },
     queueReadyAt: { type: Date, default: null },
     waitlistPosition: Number,
-    // Day-of attendance, recorded by the host.
+    // Day-of attendance, recorded by the host or by the player scanning the
+    // venue QR code.
     attendance: {
       type: String,
       enum: ["pending", "present", "no-show"],
       default: "pending",
     },
     checkedInAt: { type: Date, default: null },
+    checkInMethod: { type: String, enum: ["host", "qr"] },
     // Fee tracking. The club collects money outside the app; players submit
     // a reference (e.g. GCash ref no.) and the host confirms it.
     paymentStatus: {

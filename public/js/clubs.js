@@ -358,11 +358,11 @@ export async function hostTab(container, state, event) {
     const payment = fee
       ? `<td>${pill(PAYMENT_BADGE[r.paymentStatus])}${r.paymentMethod ? `<br><small class="subtle">${esc(methodName(r.paymentMethod))}${r.paymentReference ? ` · ${esc(r.paymentReference)}` : ""}</small>` : ""}</td><td><div class="inline-actions">${r.paymentStatus !== "paid" ? `<button class="btn btn-primary btn-sm" data-pay="paid" data-user="${esc(p.id)}">Mark paid</button>` : `<button class="btn btn-secondary btn-sm" data-pay="unpaid" data-user="${esc(p.id)}">Undo</button>`}${r.paymentStatus === "submitted" ? `<button class="btn btn-secondary btn-sm" data-pay="unpaid" data-user="${esc(p.id)}" data-reject="1">Reject</button>` : ""}${["unpaid", "submitted"].includes(r.paymentStatus) ? `<button class="btn btn-secondary btn-sm" data-pay="waived" data-user="${esc(p.id)}">Waive</button>` : ""}</div></td>`
       : "";
-    return `<tr><td>${who(state, p)}</td><td>${attendance}${r.checkedInAt ? `<br><small class="subtle">${time(r.checkedInAt)}</small>` : ""}</td>${payment}</tr>`;
+    return `<tr><td>${who(state, p)}</td><td>${attendance}${r.checkedInAt ? `<br><small class="subtle">${time(r.checkedInAt)}${r.checkInMethod === "qr" ? " · scanned QR" : ""}</small>` : ""}</td>${payment}</tr>`;
   };
   container.innerHTML = `<div class="stats-grid">${stat("Checked in", `${summary.present}<span class="muted fs-6"> / ${summary.confirmed}</span>`, `${summary.noShow} no-show${summary.noShow === 1 ? "" : "s"}`)}${fee ? stat("Paid", `${summary.paid}<span class="muted fs-6"> / ${summary.confirmed}</span>`, `${summary.awaitingConfirmation} waiting for you to confirm`) + stat("Collected", `₱${summary.collected.toLocaleString()}`, `₱${(event.fee * summary.confirmed).toLocaleString()} expected`) : ""}${stat("Waitlist", summary.waitlisted, event.waitlistEnabled ? "Promoted automatically" : "Waitlist off")}</div>
   ${checkInOpen ? "" : `<div class="notice mb-4">Check-in opens 2 hours before the meetup (${date(new Date(+new Date(event.startDateTime) - 2 * 3600_000))} · ${time(new Date(+new Date(event.startDateTime) - 2 * 3600_000))}). You can confirm payments any time.</div>`}
-  <section class="panel"><div class="panel-header"><div><h3>Roster</h3><p>${fee ? "Check players in as they arrive and confirm their payments." : "Check players in as they arrive."}</p></div><div class="inline-actions"><input class="form-control" id="roster-q" type="search" placeholder="Find player" aria-label="Find player on roster"><button class="btn btn-secondary" id="export-roster">${icon("download")} Export</button></div></div>${confirmed.length ? `<div class="table-wrap"><table><thead><tr><th>Player</th><th>Attendance</th>${fee ? "<th>Payment</th><th>Action</th>" : ""}</tr></thead><tbody id="roster-rows">${confirmed.map(row).join("")}</tbody></table></div>` : empty("No confirmed players yet")}${waiting.length ? `<h3 class="mt-4">Waitlist</h3>${waiting.map((r) => `<div class="social-row">${who(state, r.player)}<span class="badge">#${r.waitlistPosition}</span></div>`).join("")}` : ""}</section>`;
+  <section class="panel"><div class="panel-header"><div><h3>Roster</h3><p>${fee ? "Check players in as they arrive and confirm their payments." : "Check players in as they arrive."}</p></div><div class="inline-actions"><input class="form-control" id="roster-q" type="search" placeholder="Find player" aria-label="Find player on roster">${event.status !== "cancelled" ? `<button class="btn btn-primary" id="show-checkin-qr">${icon("qr-code")} Check-in QR</button>` : ""}<button class="btn btn-secondary" id="export-roster">${icon("download")} Export</button></div></div>${confirmed.length ? `<div class="table-wrap"><table><thead><tr><th>Player</th><th>Attendance</th>${fee ? "<th>Payment</th><th>Action</th>" : ""}</tr></thead><tbody id="roster-rows">${confirmed.map(row).join("")}</tbody></table></div>` : empty("No confirmed players yet")}${waiting.length ? `<h3 class="mt-4">Waitlist</h3>${waiting.map((r) => `<div class="social-row">${who(state, r.player)}<span class="badge">#${r.waitlistPosition}</span></div>`).join("")}` : ""}</section>`;
 
   const reload = () =>
     hostTab(container, state, event).then(() => lucide.createIcons());
@@ -398,6 +398,8 @@ export async function hostTab(container, state, event) {
         reload();
       }),
   );
+  const qrButton = container.querySelector("#show-checkin-qr");
+  if (qrButton) qrButton.onclick = () => showCheckInQr(event);
   const search = container.querySelector("#roster-q");
   search.oninput = () => {
     const q = search.value.trim().toLowerCase();
@@ -426,6 +428,66 @@ export async function hostTab(container, state, event) {
         r.paymentReference || "",
       ]),
     ]);
+}
+
+// Host: the QR code players scan at the venue to check themselves in. Shown
+// large so it can be held up on a phone or put on a tablet at the desk.
+async function showCheckInQr(event) {
+  const load = (method = "GET") =>
+    api(`/events/${event._id}/checkin-qr`, method);
+  let qr = await load();
+  const body = () =>
+    `<div class="checkin-qr" role="img" aria-label="Check-in QR code for ${esc(event.eventName)}">${qr.svg}</div><p class="mt-3 mb-1"><strong>Players scan this with their phone camera to check in.</strong></p><p class="subtle mb-3">Works from ${date(qr.opensAt)} · ${time(qr.opensAt)} until ${time(qr.closesAt)}. Only confirmed players can check in.</p><div class="inline-actions justify-content-center"><button type="button" class="btn btn-secondary btn-sm" id="copy-checkin-link">${icon("copy")} Copy link</button><button type="button" class="btn btn-secondary btn-sm" id="rotate-checkin-code">${icon("refresh-cw")} New code</button></div>`;
+  await Swal.fire({
+    title: esc(event.eventName),
+    html: `<div id="checkin-qr-body">${body()}</div>`,
+    width: 520,
+    confirmButtonText: "Done",
+    didOpen: (popup) => {
+      const wire = () => {
+        lucide.createIcons();
+        popup.querySelector("#copy-checkin-link").onclick = async (e) => {
+          try {
+            await navigator.clipboard.writeText(qr.url);
+            e.currentTarget.textContent = "Link copied";
+          } catch {
+            window.prompt("Copy the check-in link", qr.url);
+          }
+        };
+        popup.querySelector("#rotate-checkin-code").onclick = async (e) => {
+          const button = e.currentTarget;
+          button.disabled = true;
+          try {
+            qr = await load("POST");
+            popup.querySelector("#checkin-qr-body").innerHTML = body();
+            wire();
+          } catch (error) {
+            button.disabled = false;
+            button.textContent = error.message;
+          }
+        };
+      };
+      wire();
+    },
+  });
+}
+
+// Player: landed here from the venue QR code (#/checkin/<eventId>/<code>).
+export async function checkInPage(content, eventId, code) {
+  // Keep the secret code out of the address bar and browser history.
+  history.replaceState(null, "", `#/checkin/${eventId}`);
+  if (!code) {
+    content.innerHTML = `<section class="panel checkin-result">${icon("qr-code")}<h2>Scan to check in</h2><p class="subtle">Scan the QR code your host is showing at the venue.</p><a class="btn btn-secondary" href="#/events/${esc(eventId)}">View event</a></section>`;
+    return;
+  }
+  content.innerHTML = `<div class="loading">Checking you in…</div>`;
+  try {
+    const result = await api(`/events/${eventId}/checkin`, "POST", { code });
+    content.innerHTML = `<section class="panel checkin-result ok">${icon("circle-check")}<h2>${esc(result.message)}</h2><p><strong>${esc(result.event.eventName)}</strong><br><span class="subtle">${esc(result.event.location)} · checked in ${time(result.checkedInAt)}</span></p><a class="btn btn-primary" href="#/events/${esc(eventId)}">View event</a></section>`;
+  } catch (error) {
+    if (error.status === 401) throw error;
+    content.innerHTML = `<section class="panel checkin-result">${icon("circle-alert")}<h2>We couldn’t check you in</h2><p>${esc(error.message)}</p><a class="btn btn-secondary" href="#/events/${esc(eventId)}">View event</a></section>`;
+  }
 }
 
 // Shown on "My events": the player's past meetups and how they went.

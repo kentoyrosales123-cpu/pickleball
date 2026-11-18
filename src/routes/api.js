@@ -35,6 +35,7 @@ import {
   memberRoleSchema,
   meetupSchema,
   attendanceSchema,
+  selfCheckInSchema,
   paymentStatusSchema,
   paymentSubmitSchema,
 } from "../controllers/clubs.js";
@@ -233,6 +234,9 @@ export function api(config) {
     validate(attendanceSchema),
     clubs.setAttendance,
   );
+  r.get("/events/:id/checkin-qr", clubs.checkInQr(config));
+  r.post("/events/:id/checkin-qr", clubs.checkInQr(config));
+  r.post("/events/:id/checkin", validate(selfCheckInSchema), clubs.selfCheckIn);
   r.put(
     "/events/:id/roster/:userId/payment",
     validate(paymentStatusSchema),
